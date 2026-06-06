@@ -1,0 +1,92 @@
+[
+  {
+    "name": "radiosunokannada",
+    "url": "https://playerservices.streamtheworld.com/api/livestream-redirect/RADIO_SUNO_MELODY_S06.mp3",
+    "logo": "https://radiosindia.com/images/radiosunokannada1.jpg",
+    "country": "India",
+    "tags": "",
+    "bitrate": 96,
+    "votes": 381,
+    "codec": "MP3"
+  },
+  {
+    "name": "fmrainbowkannada",
+    "url": "https://airhlspush.pc.cdn.bitgravity.com/httppush/hlspbaudio027/hlspbaudio027_Auto.m3u8",
+    "logo": "",
+    "country": "India",
+    "tags": "",
+    "bitrate": 32,
+    "votes": 321,
+    "codec": "AAC+"
+  },
+  {
+    "name": "Kannadasan Radio",
+    "url": "https://psrlive2.listenon.in/kavi?station=kaviyarasarradio",
+    "logo": "",
+    "country": "India",
+    "tags": "india,kannadasan,kaviarasar,tamil,tamil nadu",
+    "bitrate": 64,
+    "votes": 716,
+    "codec": "AAC+"
+  },
+  {
+    "name": "Anbu FM Kannada",
+    "url": "http://stream.zeno.fm/45f9c2byfy8uv",
+    "logo": "https://onlineradiohub.com/wp-content/uploads/2022/01/anbufm.jpg",
+    "country": "India",
+    "tags": "",
+    "bitrate": 0,
+    "votes": 512,
+    "codec": "MP3"
+  },
+  {
+    "name": "Namm radio Kannada",
+    "url": "https://stream.zenolive.com/bbs8prb015quv",
+    "logo": "https://onlineradiohub.com/wp-content/uploads/2022/01/naam-radio-kannada.jpg",
+    "country": "India",
+    "tags": "",
+    "bitrate": 0,
+    "votes": 296,
+    "codec": "MP3"
+  },
+  {
+    "name": "Radio Girmit Kannada",
+    "url": "https://stream.radiojar.com/g6dgm6m6p3hvv",
+    "logo": "https://onlineradiohub.com/wp-content/uploads/2022/01/radio-girmit-kannada.jpg",
+    "country": "India",
+    "tags": "",
+    "bitrate": 0,
+    "votes": 275,
+    "codec": "MP3"
+  },
+  {
+    "name": "kannadahits",
+    "url": "https://stream.zeno.fm/68snnbug8rhvv",
+    "logo": "https://radiosindia.com/images/kannadahits.jpg",
+    "country": "India",
+    "tags": "",
+    "bitrate": 0,
+    "votes": 830,
+    "codec": "MP3"
+  },
+  {
+    "name": "Sakkath Radio Kannada",
+    "url": "https://node-31.zeno.fm/fcsk9ryerd0uv?rj-ttl=5&rj-tok=AAABdXnVZ3sA-61zQpwDIgRWvw",
+    "logo": "https://onlineradiohub.com/wp-content/uploads/2022/01/sakkath-radio-kannada.jpg",
+    "country": "India",
+    "tags": "",
+    "bitrate": 0,
+    "votes": 997,
+    "codec": "MP3"
+  },
+  {
+    "name": "1.FM - Top Hits 2000",
+    "url": "http://185.33.21.112/hits2000_128",
+    "logo": "",
+    "country": "Eswatini",
+    "tags": "pop",
+    "bitrate": 192,
+    "votes": 2610,
+    "codec": "MP3"
+  }
+]
