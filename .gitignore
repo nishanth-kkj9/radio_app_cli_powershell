@@ -1,5 +1,13 @@
-venv/
-*.zip
-__pycache__/
-*.pyc
-.vs/
+# Ignore everything
+*
+
+# Keep gitignore
+!.gitignore
+
+# Keep source folder
+!radio_ps/
+!radio_ps/**
+
+# Ignore Python cache
+radio_ps/**/__pycache__/
+radio_ps/**/*.pyc
