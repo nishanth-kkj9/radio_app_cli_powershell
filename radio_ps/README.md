@@ -35,10 +35,10 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 
 ### Manual run (if you prefer):
 ```powershell
-pip install -r requirements.txt
-python radio.py
-python radio.py -c jazz
-python radio.py --check
+pip install -e .
+python -m radio_ps
+python -m radio_ps -c jazz
+python -m radio_ps --check
 ```
 
 ---
@@ -135,21 +135,17 @@ All data is stored in `%APPDATA%\PowerShellRadioPro\`:
 
 ```
 radio_ps/
-├── radio.py                # Entry point + dependency checker
-├── Start-Radio.ps1         # PowerShell launcher (auto-installs packages)
-├── requirements.txt
-├── core/
-│   ├── config.py           # All tuneable constants
-│   ├── api.py              # Radio Browser API (multi-mirror, retry)
-│   ├── player.py           # python-vlc RadioPlayer (libvlc bindings)
-│   └── equalizer.py        # 10-band software EQ
-├── services/
-│   └── station_service.py  # Fetch / alive-check / cache / preload / refresh
-├── ui/
-│   └── cli_ui.py           # Rich terminal UI + full command REPL
-└── utils/
-    ├── logger.py            # Rotating file logger
-    └── storage.py           # JSON persistence (atomic writes)
+├── pyproject.toml              # Package config (src layout, deps, scripts)
+├── README.md
+├── Start-Radio.ps1            # PowerShell launcher
+├── src/radio_ps/
+│   ├── __init__.py           # __version__ = "2.0"
+│   ├── main.py              # Entry point
+│   ├── core/              # 5 modules (player, config, api, equalizer)
+│   ├── services/          # station_service (with cache/preload)
+│   ├── ui/               # cli_ui (Rich terminal UI + command REPL)
+│   └── utils/            # logger, storage (atomic JSON writes)
+└── tests/               # Test directory
 ```
 
 ### Why python-vlc instead of cvlc+RC socket?
