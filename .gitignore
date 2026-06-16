@@ -15,9 +15,6 @@
 !CONTRIBUTING.md
 !LICENSE
 !README.md
-!radio_audios/
-!radio_audios/**
-
 # Ignore Visual Studio files inside projects
 smart_radio_pro_PyQt6_v13/**/.vs/
 radio_ps/**/.vs/
