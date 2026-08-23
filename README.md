@@ -41,6 +41,13 @@ python -m radio_ps -c jazz
 python -m radio_ps --check
 ```
 
+### Development / Testing:
+```powershell
+pip install -e .[dev]
+pytest
+```
+Tests run without VLC installed (a fake `vlc` module is injected by `tests/conftest.py`).
+
 ---
 
 ## Commands

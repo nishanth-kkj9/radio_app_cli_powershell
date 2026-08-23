@@ -22,6 +22,12 @@ radio_ps/**/*.pyc
 # Ignore build artifacts
 radio_ps/src/*.egg-info/
 *.egg-info/
+radio_ps/build/
+radio_ps/dist/
+
+# Ignore test/tooling caches
+.pytest_cache/
+radio_ps/.pytest_cache/
 
 # Ignore virtual environment
 venv/
