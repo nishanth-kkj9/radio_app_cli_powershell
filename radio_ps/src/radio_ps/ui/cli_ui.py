@@ -63,6 +63,18 @@ _MAX_MARQUEE = 60
 _APP_NAME    = "PowerShell Radio Pro"
 _APP_VER     = "2.0"
 
+# state label -> (display, style)
+_STATE_UI = {
+    "playing":      ("▶ Playing",       "bold green"),
+    "paused":       ("⏸ Paused",        "yellow"),
+    "opening":      ("◌ Connecting…",   "yellow"),
+    "buffering":    ("◌ Buffering…",    "yellow"),
+    "reconnecting": ("↻ Reconnecting…", "yellow"),
+    "stopped":      ("■ Stopped",       "red"),
+    "ended":        ("■ Ended",         "red"),
+    "error":        ("✖ Error",         "bold red"),
+}
+
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -155,7 +167,7 @@ class RadioCLI:
         self._console.print("[dim]Commands: p/n/b/r = play/next/prev/rand | v/m = vol/mute[/dim]")
         self._console.print("[dim]        s/f/eq = search/fav/equalizer | record = record[/dim]")
         self._console.print("[dim]        q = quit | h = help[/dim]")
-        self._sep()
+        self._console.print(Rule(style="dim cyan"))
 
     def _fetch_initial(self, category: str) -> None:
         self._console.print(f"[cyan]Loading {category}...[/cyan]")
@@ -181,25 +193,32 @@ class RadioCLI:
         if not self._stations:
             self._console.print("[yellow]No stations found[/yellow]")
             return
-        t = Table(show_header=True, header_style="bold cyan")
-        t.add_column("[cyan]#[/]",width=4,justify="right")
-        t.add_column("[cyan]Station[/]",width=40)
-        t.add_column("[cyan]Country[/]",width=12)
-        t.add_column("[cyan]Quality[/]",width=8)
+        total = len(self._stations)
+        t = Table(
+            show_header=True,
+            header_style="bold cyan",
+            box=box.ROUNDED,
+            row_styles=["dim", ""],
+            caption=(
+                f"[dim]Showing first 40 of {total} stations[/dim]"
+                if total > 40 else f"[dim]{total} stations[/dim]"
+            ),
+        )
+        t.add_column("#", width=4, justify="right", style="cyan")
+        t.add_column("Station", width=40)
+        t.add_column("Country", width=14, style="dim")
+        t.add_column("Quality", width=8, justify="center")
         for i, s in enumerate(self._stations[:40], 1):
+            name = s.get("name", "?")
+            if i == self._current + 1 and s.get("url") == self._player.get_current_url():
+                name = f"▶ {name}"
             t.add_row(
                 str(i),
-                _truncate(s.get("name", "?"), 38),
-                _truncate(s.get("country", ""), 12),
+                _truncate(name, 38),
+                _truncate(s.get("country", ""), 14),
                 _quality_badge(s.get("bitrate", 0)),
             )
         self._console.print(t)
-        total = len(self._stations)
-        shown = min(40, total)
-        if total > 40:
-            self._console.print(f"[dim]Showing first 40 of {total} stations[/dim]")
-        else:
-            self._console.print(f"[dim]Showing {total} stations[/dim]")
 
     def _play_station(self, index: int | None = None) -> None:
         if index is None:
@@ -223,20 +242,41 @@ class RadioCLI:
             if not (0 <= self._current < len(self._stations)):
                 return
             s = self._stations[self._current]
-        url = self._player.get_current_url()
         meta = self._player.get_current_metadata()
-        title = meta.get("title", "")
+        raw_title = (meta.get("title") or "").strip()
+        url = self._player.get_current_url() or ""
+        # VLC reports the URL filename as Title when a stream has no ICY
+        # metadata - hide those fragments instead of showing garbage.
+        basename = os.path.basename(url.split("?")[0])
+        title = "" if (
+            not raw_title
+            or raw_title == basename
+            or "?" in raw_title
+            or raw_title.lower().endswith((".m3u8", ".mp3", ".aac", ".pls"))
+        ) else raw_title
         state = self._player.get_state_label()
+        playing = self._player.is_playing()
+
+        content = Text()
+        content.append(_clean_name(s.get("name", "?")), style="bold cyan")
+        if s.get("country"):
+            content.append(f"\n{s['country']}", style="dim")
+        if title:
+            content.append(f"\n♪ {title}", style="green")
+        label, style = _STATE_UI.get(state, ("• " + state, "cyan"))
+        line = f"{label}"
+        if state == "playing" and self._start_time:
+            line += f"  ·  {_fmt_elapsed(int(time.time() - self._start_time))}"
+        content.append("\n" + line, style=style)
+
         p = Panel(
-            Text.assemble(
-                f"[bold cyan]{_clean_name(s.get('name','?'))}[/bold cyan]\n",
-                f"[dim]{s.get('country','')}[/dim]\n" if s.get("country") else "",
-                f"[green]{title}[/green]\n" if title else "",
-                f"[yellow]▮▮▮▮▯ {state}[/yellow]" if self._player.is_playing() else "[red]▮▮▮▮▮ stopped[/red]",
-            ),
-            title="Now Playing",
+            content,
+            title="♪ Now Playing",
+            title_align="left",
             border_style="cyan",
             box=box.ROUNDED,
+            padding=(0, 2),
+            width=max(44, min(self._console.width or 64, 64)),
         )
         self._console.print(p)
 
@@ -306,6 +346,8 @@ class RadioCLI:
             self._cmd_rand()
         elif cmd == "s" and args:
             self._cmd_search(args)
+        elif cmd == "s":
+            self._console.print("[red]Usage: s <query>[/red]")
         elif cmd == "cat" and args:
             self._cmd_category(args)
         elif cmd == "sort" and args:
@@ -534,12 +576,14 @@ class RadioCLI:
         self._console.print("[bold cyan]Commands[/bold cyan]")
         self._console.print("[dim]Playback:[/dim] p <n> = play station | stop = stop")
         self._console.print("[dim]          n/next | b/prev | r/rand[/dim]")
-        self._console.print("[dim]Browse:[/dim]  s <query> = search | cat <name> = category")
-        self._console.print("[dim]          ls = list | sort <key>[/dim]")
+        self._console.print("[dim]Browse:[/dim]  s <query> = search | cat <name|#> = category")
+        self._console.print("[dim]          ls = list | sort <name|bitrate|votes|country>[/dim]")
         self._console.print("[dim]Audio:[/dim]   v <0-100> = volume | m = mute")
-        self._console.print("[dim]          f <n> = favorite | eq = equalizer[/dim]")
-        self._console.print("[dim]Record:[/dim]  record = start | stoprec = stop")
-        self._console.print("[dim]Other:[/dim]   q = quit | h = help | log = logs")
+        self._console.print("[dim]          f <n> = favorite | eq <preset> = equalizer[/dim]")
+        self._console.print("[dim]Record:[/dim]  record [name] = record | stoprec = stop")
+        self._console.print("[dim]Other:[/dim]   now = now playing | info = station details")
+        self._console.print("[dim]          sleep <min> = timer (re-run to cancel)[/dim]")
+        self._console.print("[dim]          q = quit | h = help | log [n] = logs[/dim]")
 
     def _show_vlc_info(self) -> None:
         import vlc
