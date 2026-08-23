@@ -85,7 +85,7 @@ python -m radio_ps --check
 | `record <filename>` | Record with specific filename |
 | `stoprec` | Stop recording and show saved file path |
 
-Recordings are saved to `%APPDATA%\PowerShellRadioPro\` by default.
+Recordings are saved to `%APPDATA%\PowerShellRadioPro\recordings\` by default.
 
 ### System
 | Command | Description |
@@ -127,7 +127,8 @@ All data is stored in `%APPDATA%\PowerShellRadioPro\`:
 | `favorites.json` | Saved favorite stations |
 | `recent.json` | Recently played (up to 20) |
 | `session.json` | Last station + volume (restored on next launch) |
-| `radio_log.txt` | Rotating log (1MB × 2 files) |
+| `recordings\` | Stream recordings (`record` command) |
+| `radio_log.txt` | Rotating log (2MB × 3 files) |
 
 ---
 
@@ -140,8 +141,9 @@ radio_ps/
 ├── Start-Radio.ps1            # PowerShell launcher
 ├── src/radio_ps/
 │   ├── __init__.py           # __version__ = "2.0"
+│   ├── __main__.py           # python -m radio_ps entry
 │   ├── main.py              # Entry point
-│   ├── core/              # 5 modules (player, config, api, equalizer)
+│   ├── core/              # 4 modules (player, config, api, equalizer)
 │   ├── services/          # station_service (with cache/preload)
 │   ├── ui/               # cli_ui (Rich terminal UI + command REPL)
 │   └── utils/            # logger, storage (atomic JSON writes)

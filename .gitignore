@@ -5,8 +5,6 @@
 !.gitignore
 
 # Keep project folders
-!smart_radio_pro_PyQt6_v13/
-!smart_radio_pro_PyQt6_v13/**
 !radio_ps/
 !radio_ps/**
 !.github/
@@ -15,17 +13,15 @@
 !CONTRIBUTING.md
 !LICENSE
 !README.md
-# Ignore Visual Studio files inside projects
-smart_radio_pro_PyQt6_v13/**/.vs/
-radio_ps/**/.vs/
 
 # Ignore Python cache
-smart_radio_pro_PyQt6_v13/**/__pycache__/
-smart_radio_pro_PyQt6_v13/**/src/**/__pycache__/
-smart_radio_pro_PyQt6_v13/**/*.pyc
 radio_ps/**/__pycache__/
 radio_ps/**/src/**/__pycache__/
 radio_ps/**/*.pyc
+
+# Ignore build artifacts
+radio_ps/src/*.egg-info/
+*.egg-info/
 
 # Ignore virtual environment
 venv/
@@ -37,11 +33,6 @@ venv/
 *.log
 
 # Ignore runtime files
-smart_radio_pro_PyQt6_v13/**/favorites.json
-smart_radio_pro_PyQt6_v13/**/recent.json
-smart_radio_pro_PyQt6_v13/**/session.json
-smart_radio_pro_PyQt6_v13/**/stats.json
-smart_radio_pro_PyQt6_v13/**/radio_log.txt
 radio_ps/**/favorites.json
 radio_ps/**/recent.json
 radio_ps/**/session.json

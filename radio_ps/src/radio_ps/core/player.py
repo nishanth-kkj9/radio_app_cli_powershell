@@ -323,6 +323,9 @@ class RadioPlayer:
         if not self._muted:
             self._player.audio_set_volume(vol)
 
+    def get_volume(self) -> int:
+        return self._volume
+
     def toggle_mute(self) -> bool:
         self._muted = not self._muted
         self._player.audio_set_volume(0 if self._muted else self._volume)

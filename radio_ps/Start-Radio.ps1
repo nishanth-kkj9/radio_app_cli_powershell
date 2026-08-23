@@ -89,7 +89,7 @@ Set-Location $scriptDir
 # ── Check mode ────────────────────────────────────────────────────────────────
 if ($Check) {
     Write-Host ""
-    & $pythonExe radio.py --check
+    & $pythonExe -m radio_ps --check
     exit $LASTEXITCODE
 }
 
@@ -109,10 +109,13 @@ foreach ($pkg in @("vlc", "rich", "requests")) {
 if ($needsInstall) {
     Write-Host ""
     Write-Host "  Installing missing packages..." -ForegroundColor Cyan
-    & $pythonExe -m pip install -r requirements.txt --quiet
-    if ($LASTEXITCODE -ne 0) {
+    Push-Location $scriptDir
+    & $pythonExe -m pip install --quiet -e .
+    $installExit = $LASTEXITCODE
+    Pop-Location
+    if ($installExit -ne 0) {
         Write-Host "  [ERROR] pip install failed. Try manually:" -ForegroundColor Red
-        Write-Host "    pip install python-vlc rich requests" -ForegroundColor Yellow
+        Write-Host "    cd radio_ps; pip install -e ." -ForegroundColor Yellow
         Write-Host ""
         pause
         exit 1
@@ -134,9 +137,9 @@ Write-Host "  Launching radio..." -ForegroundColor Cyan
 Write-Host ""
 
 if ($Category -ne "") {
-    & $pythonExe radio.py -c $Category
+    & $pythonExe -m radio_ps -c $Category
 } else {
-    & $pythonExe radio.py
+    & $pythonExe -m radio_ps
 }
 
 $exitCode = $LASTEXITCODE

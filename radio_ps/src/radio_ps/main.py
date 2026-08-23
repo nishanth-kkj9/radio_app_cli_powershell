@@ -42,7 +42,7 @@ def _check_dependencies() -> bool:
         try:
             __import__(module)
             print(f"  ✓ {pip_name:<20} {desc}")
-        except ImportError:
+        except (ImportError, OSError):
             print(f"  ✗ {pip_name:<20} {desc}  ← MISSING")
             print(f"    ↳ pip install {pip_name}")
             ok = False

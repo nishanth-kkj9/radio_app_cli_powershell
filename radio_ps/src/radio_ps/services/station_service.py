@@ -15,7 +15,7 @@ from __future__ import annotations
 import threading
 import time
 import requests
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
 from radio_ps.core.api import fetch_stations, fetch_stations_by_tag
 from radio_ps.core.config import (
@@ -90,16 +90,22 @@ def filter_alive_stations(stations: list[dict]) -> list[dict]:
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         future_map = {pool.submit(is_station_alive, s): s for s in stations}
-        for future in as_completed(future_map, timeout=90):
-            s = future_map[future]
-            try:
-                alive = future.result(timeout=15)
-            except Exception as exc:
-                alive = False
-                log(f"Alive-check error ({s.get('url','?')}): {exc}", "debug")
-            results[s["url"]] = alive
-            if not alive:
-                dead_list.append(s.get("name", s.get("url", "?")))
+        try:
+            for future in as_completed(future_map, timeout=90):
+                s = future_map[future]
+                try:
+                    alive = future.result(timeout=15)
+                except Exception as exc:
+                    alive = False
+                    log(f"Alive-check error ({s.get('url','?')}): {exc}", "debug")
+                results[s["url"]] = alive
+                if not alive:
+                    dead_list.append(s.get("name", s.get("url", "?")))
+        except TimeoutError:
+            log(
+                f"Alive check timed out; using {len(results)} completed result(s) of {len(stations)}",
+                "warning",
+            )
 
     ordered = [s for s in stations if results.get(s["url"], False)]
 

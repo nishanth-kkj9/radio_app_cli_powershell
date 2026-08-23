@@ -11,6 +11,7 @@ Overlap fix (v3.1):
 from __future__ import annotations
 
 import os
+import re
 import sys
 import time
 import threading
@@ -52,12 +53,12 @@ from radio_ps.utils.storage import (
     get_data_dir,
 )
 from radio_ps.utils.logger import log, get_log_path
+from radio_ps.utils import paths
 
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
 _SPINNER     = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
-_AUDIO_DIR   = os.path.join("E:\\", "radio_app_cli_powershell", "radio_audios")
 _MAX_MARQUEE = 60
 _APP_NAME    = "PowerShell Radio Pro"
 _APP_VER     = "2.0"
@@ -109,8 +110,6 @@ class RadioCLI:
         self._category = "top"
         self._favorites: list[dict] = []
         self._recent: list[dict] = []
-        self._history: list[int] = []
-        self._history_pos = 0
         self._recording = False
         self._recording_path = None
         self._sleep_timer: int | None = None
@@ -162,7 +161,7 @@ class RadioCLI:
         self._console.print(f"[cyan]Loading {category}...[/cyan]")
         self._load_category(category)
         self._list_stations()
-        preload_categories()
+        threading.Thread(target=preload_categories, daemon=True, name="preload").start()
         start_refresh_timer()
         self._sep()
 
@@ -195,7 +194,12 @@ class RadioCLI:
                 _quality_badge(s.get("bitrate", 0)),
             )
         self._console.print(t)
-        self._console.print(f"[dim]Showing {len(self._stations)} stations[/dim]")
+        total = len(self._stations)
+        shown = min(40, total)
+        if total > 40:
+            self._console.print(f"[dim]Showing first 40 of {total} stations[/dim]")
+        else:
+            self._console.print(f"[dim]Showing {total} stations[/dim]")
 
     def _play_station(self, index: int | None = None) -> None:
         if index is None:
@@ -208,8 +212,6 @@ class RadioCLI:
         s = self._stations[index]
         if self._player.play(s["url"]):
             self._current = index
-            self._history.append(index)
-            self._history_pos = len(self._history)
             self._add_recent(s)
             self._start_time = time.time()
             self._sep()
@@ -256,6 +258,9 @@ class RadioCLI:
                     break
             except (KeyboardInterrupt, EOFError):
                 break
+            except Exception as e:
+                self._console.print(f"[red]Error: {e}[/red]")
+                log(f"Command error: {e}", "error")
         self._shutdown()
 
     def _dispatch(self, line: str) -> bool:
@@ -323,6 +328,10 @@ class RadioCLI:
             self._cmd_record([])
         elif cmd in ("stoprec", "stoprec"):
             self._cmd_stop_rec()
+        elif cmd in ("stop", "stopplay"):
+            self._player.stop()
+            self._start_time = None
+            self._console.print("[yellow]Stopped[/yellow]")
         elif cmd == "sleep" and args:
             self._cmd_sleep(args)
         elif cmd.isdigit():
@@ -376,7 +385,7 @@ class RadioCLI:
 
     def _cmd_sort(self, args: list[str]) -> None:
         if not args:
-            self._console.print("[red>sort key (name|bitrate|votes|country)[/red]")
+            self._console.print("[red]Usage: sort <name|bitrate|votes|country>[/red]")
             return
         key = args[0].lower()
         if key == "name":
@@ -402,7 +411,7 @@ class RadioCLI:
 
     def _cmd_mute(self) -> None:
         muted = self._player.toggle_mute()
-        self._console.print(f"[{'red' if muted else green}]Mute: {'ON' if muted else 'OFF'}[/]")
+        self._console.print(f"[{'red' if muted else 'green'}]Mute: {'ON' if muted else 'OFF'}[/]")
 
     def _cmd_fav(self, args: list[str]) -> None:
         try:
@@ -436,20 +445,27 @@ class RadioCLI:
         if not args:
             self._show_eq()
             return
-        preset = args[0].lower()
-        if preset == "custom" and len(args) > 1:
+        if args[0].lower() == "custom" and len(args) > 1:
             try:
                 bands = [float(x) for x in args[1:]]
-                if len(bands) == 10:
-                    self._player.equalizer.set_custom_bands(bands)
-                    self._console.print("[green]Custom EQ set[/green]")
-                else:
-                    self._console.print("[red]Need exactly 10 band values[/red]")
             except ValueError:
                 self._console.print("[red]Invalid band values[/red]")
-        else:
-            self._player.set_equalizer_preset(preset)
-            self._console.print(f"[green]EQ: {preset}[/green]")
+                return
+            if len(bands) != 10:
+                self._console.print("[red]Need exactly 10 band values[/red]")
+                return
+            self._player.toggle_equalizer(True)
+            self._player.equalizer.set_custom_bands(bands)
+            self._console.print("[green]Custom EQ set[/green]")
+            return
+        try:
+            preset = self._player.equalizer.resolve_preset(args[0])
+        except ValueError as e:
+            self._console.print(f"[red]Unknown preset '{args[0]}'. Options: {e}[/red]")
+            return
+        self._player.toggle_equalizer(preset != "None")
+        self._player.set_equalizer_preset(preset)
+        self._console.print(f"[green]EQ: {preset}{' (off)' if preset == 'None' else ''}[/green]")
 
     def _cmd_record(self, args: list[str]) -> None:
         if self._recording:
@@ -459,9 +475,19 @@ class RadioCLI:
         if not url:
             self._console.print("[red]Nothing playing[/red]")
             return
-        os.makedirs(_AUDIO_DIR, exist_ok=True)
+        audio_dir = paths.get_recordings_dir()
+        try:
+            os.makedirs(audio_dir, exist_ok=True)
+        except OSError as e:
+            self._console.print(f"[red]Cannot create recording directory {audio_dir}: {e}[/red]")
+            return
         name = " ".join(args) if args else datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = os.path.join(_AUDIO_DIR, f"{name}.mp3")
+        name = os.path.basename(name.strip())
+        name = re.sub(r"[^A-Za-z0-9_ \-]", "", name)[:80].strip()
+        if not name:
+            self._console.print("[red]Invalid recording name[/red]")
+            return
+        path = os.path.join(audio_dir, f"{name}.mp3")
         if self._player.record(url, path):
             self._recording = True
             self._recording_path = path
@@ -481,20 +507,28 @@ class RadioCLI:
     def _cmd_sleep(self, args: list[str]) -> None:
         try:
             mins = int(args[0])
-            self._sleep_cancel.clear()
-            self._sleep_timer = mins
-            def _sleep_task():
-                for i in range(mins * 60, 0, -60):
-                    if self._sleep_cancel.is_set():
-                        return
-                    time.sleep(60)
-                self._player.stop()
-                self._console.print("[cyan]Sleep timer: playback stopped[/cyan]")
-            self._sleep_thread = threading.Thread(target=_sleep_task, daemon=True)
-            self._sleep_thread.start()
-            self._console.print(f"[green]Sleep in {mins} min[/green]")
         except (ValueError, IndexError):
             self._console.print("[red]Usage: sleep <minutes>[/red]")
+            return
+        if self._sleep_thread and self._sleep_thread.is_alive():
+            self._sleep_cancel.set()
+            self._console.print("[yellow]Previous sleep timer cancelled[/yellow]")
+        self._sleep_cancel = threading.Event()
+        self._sleep_timer = mins
+
+        def _sleep_task():
+            for i in range(mins * 60, 0, -60):
+                if self._sleep_cancel.is_set():
+                    return
+                time.sleep(60)
+            if self._sleep_cancel.is_set():
+                return
+            self._player.stop()
+            self._console.print("[cyan]Sleep timer: playback stopped[/cyan]")
+
+        self._sleep_thread = threading.Thread(target=_sleep_task, daemon=True)
+        self._sleep_thread.start()
+        self._console.print(f"[green]Sleep in {mins} min[/green]")
 
     def _show_help(self) -> None:
         self._console.print("[bold cyan]Commands[/bold cyan]")
@@ -504,8 +538,8 @@ class RadioCLI:
         self._console.print("[dim]          ls = list | sort <key>[/dim]")
         self._console.print("[dim]Audio:[/dim]   v <0-100> = volume | m = mute")
         self._console.print("[dim]          f <n> = favorite | eq = equalizer[/dim]")
-        self._console.print("[dim]Record:[/dim]  record = start | stoprec = stop[/dim]")
-        self._console.print("[dim]Other:[/dim]   q = quit | h = help | log = logs[/dim]")
+        self._console.print("[dim]Record:[/dim]  record = start | stoprec = stop")
+        self._console.print("[dim]Other:[/dim]   q = quit | h = help | log = logs")
 
     def _show_vlc_info(self) -> None:
         import vlc
@@ -555,11 +589,10 @@ class RadioCLI:
         if self._sleep_cancel:
             self._sleep_cancel.set()
         if self._player:
-            vol = 70
             s = None
             if 0 <= self._current < len(self._stations):
                 s = self._stations[self._current]
-            save_session(vol, s)
+            save_session(self._player.get_volume(), s)
             self._player.shutdown()
         self._console.print("[cyan]Goodbye![/cyan]")
 

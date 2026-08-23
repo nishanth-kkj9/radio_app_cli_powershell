@@ -42,8 +42,17 @@ class Equalizer:
     def set_on_change_callback(self, cb):
         self._on_change_callback = cb
 
+    def resolve_preset(self, name: str) -> str:
+        """Case-insensitively resolve user input to a PRESETS key; raise ValueError if unknown."""
+        lowered = name.strip().lower()
+        for key in self.PRESETS:
+            if key.lower() == lowered:
+                return key
+        raise ValueError(", ".join(self.PRESETS))
+
     def set_preset(self, name: str):
         """Load a named preset into band array."""
+        name = self.resolve_preset(name)
         self._bands = [0.0] * 10
         if name == "Custom":
             self._bands = self._custom_bands.copy()
