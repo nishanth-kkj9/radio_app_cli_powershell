@@ -54,6 +54,7 @@ from radio_ps.utils.storage import (
 )
 from radio_ps.utils.logger import log, get_log_path
 from radio_ps.utils import paths
+from radio_ps.ui.art import render_logo, volume_bar
 
 
 # ── Constants ──────────────────────────────────────────────────────────────────
@@ -62,6 +63,34 @@ _SPINNER     = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
 _MAX_MARQUEE = 60
 _APP_NAME    = "PowerShell Radio Pro"
 _APP_VER     = "2.0"
+
+# ── Startup logo ───────────────────────────────────────────────────────────────
+
+_LOGO_ART = [
+    "  ____  ____     ____          _ _ ",
+    " |  _ \\/ ___|   |  _ \\ __ _ __| (_) ___",
+    " | |_) \\___ \\   | |_) / _` / _` | |/ _ \\",
+    " |  __/ ___) |  |  _ < (_| | (_| | | (_) |",
+    " |_|   |____/   |_|\\_\\__,_|\\__,_|_|\\___/",
+]
+
+_GRAD_FROM = (56, 224, 255)   # bright cyan
+_GRAD_TO   = (255, 94, 190)   # hot pink
+
+
+def _gradient_logo() -> Text:
+    """Render the startup ASCII logo with a horizontal cyan→pink gradient."""
+    t = Text()
+    for line in _LOGO_ART:
+        n = max(1, len(line) - 1)
+        for i, ch in enumerate(line):
+            f = i / n
+            r = int(_GRAD_FROM[0] + (_GRAD_TO[0] - _GRAD_FROM[0]) * f)
+            g = int(_GRAD_FROM[1] + (_GRAD_TO[1] - _GRAD_FROM[1]) * f)
+            b = int(_GRAD_FROM[2] + (_GRAD_TO[2] - _GRAD_FROM[2]) * f)
+            t.append(ch, style=f"bold #{r:02x}{g:02x}{b:02x}")
+        t.append("\n")
+    return t
 
 # state label -> (display, style)
 _STATE_UI = {
@@ -110,11 +139,53 @@ def _truncate(text: str, max_len: int) -> str:
     return text[:max_len - 1] + "…" if max_len >= 2 else text[:max_len]
 
 
+_COUNTRY_ALIASES = {
+    "united states of america": "USA",
+    "united states":            "USA",
+    "usa":                      "USA",
+    "united kingdom of great britain and northern ireland": "UK",
+    "united kingdom":           "UK",
+    "russian federation":       "Russia",
+    "netherlands (kingdom of the)": "Netherlands",
+    "kingdom of the netherlands":   "Netherlands",
+}
+
+
+def _short_country(name: str, max_len: int = 14) -> str:
+    """Compact a country name for the table: drop 'The', alias long names."""
+    if not name:
+        return ""
+    n = name.strip()
+    n = re.sub(r"^the\s+", "", n, flags=re.IGNORECASE)
+    n = n.split(",")[0].split("(")[0].strip()
+    n = _COUNTRY_ALIASES.get(n.lower(), n)
+    return _truncate(n, max_len)
+
+
+def _match_preset(token: str, presets: dict) -> str | None:
+    """
+    Resolve user input to an EQ preset key.
+    Exact (case-insensitive) → unique prefix → unique substring → None.
+    """
+    lowered = token.strip().lower()
+    keys = list(presets.keys())
+    for k in keys:
+        if k.lower() == lowered:
+            return k
+    starts = [k for k in keys if k.lower().startswith(lowered)]
+    if len(starts) == 1:
+        return starts[0]
+    contains = [k for k in keys if lowered in k.lower()]
+    if len(contains) == 1:
+        return contains[0]
+    return None
+
+
 # ── RadioCLI ───────────────────────────────────────────────────────────────────
 
 class RadioCLI:
     def __init__(self):
-        self._console = Console(force_terminal=True)
+        self._console = Console(force_terminal=True, color_system="truecolor")
         self._player = None
         self._stations: list[dict] = []
         self._by_url: dict[str, dict] = {}
@@ -161,17 +232,28 @@ class RadioCLI:
 
     def _show_welcome(self) -> None:
         self._console.print()
-        self._console.print(f"[bold cyan]{_APP_NAME}[/bold cyan] [dim]v{_APP_VER}[/dim]")
-        self._console.print("[dim]Internet radio for Windows PowerShell[/dim]")
-        self._console.print()
-        self._console.print("[dim]Commands: p/n/b/r = play/next/prev/rand | v/m = vol/mute[/dim]")
-        self._console.print("[dim]        s/f/eq = search/fav/equalizer | record = record[/dim]")
-        self._console.print("[dim]        q = quit | h = help[/dim]")
+        self._console.print(_gradient_logo())
+        title = Text()
+        title.append("♪ ", style="bold magenta")
+        title.append(_APP_NAME, style="bold cyan")
+        title.append(f" v{_APP_VER}", style="dim")
+        title.append("  ·  ", style="dim")
+        title.append("Internet radio for Windows PowerShell", style="italic dim")
+        self._console.print(Text(" " * 4) + title)
+        hints = Text("    ")
+        for keys, desc in (("p/n/b/r", "play"), ("v/m", "vol"), ("s", "search"),
+                           ("eq", "EQ"), ("record", "rec"), ("h", "help"), ("q", "quit")):
+            hints.append(f"{keys}", style="bold cyan")
+            hints.append(f" {desc}   ", style="dim")
+        self._console.print(hints)
         self._console.print(Rule(style="dim cyan"))
 
     def _fetch_initial(self, category: str) -> None:
-        self._console.print(f"[cyan]Loading {category}...[/cyan]")
-        self._load_category(category)
+        try:
+            with self._console.status(f"[cyan]Loading {category}…[/cyan]", spinner="dots"):
+                self._load_category(category)
+        except Exception as e:
+            self._console.print(f"[red]Could not load '{category}': {e}[/red]")
         self._list_stations()
         threading.Thread(target=preload_categories, daemon=True, name="preload").start()
         start_refresh_timer()
@@ -194,28 +276,43 @@ class RadioCLI:
             self._console.print("[yellow]No stations found[/yellow]")
             return
         total = len(self._stations)
+        current_url = self._player.get_current_url() if self._player else None
+        fav_urls = {f.get("url") for f in self._favorites}
+
         t = Table(
             show_header=True,
             header_style="bold cyan",
             box=box.ROUNDED,
-            row_styles=["dim", ""],
+            border_style="dim cyan",
+            row_styles=["", "dim"],
             caption=(
                 f"[dim]Showing first 40 of {total} stations[/dim]"
-                if total > 40 else f"[dim]{total} stations[/dim]"
+                if total > 40 else f"[dim]{total} station{'s' if total != 1 else ''}"
+                f"  ·  [cyan]{self._category}[/cyan][/dim]"
             ),
         )
-        t.add_column("#", width=4, justify="right", style="cyan")
-        t.add_column("Station", width=40)
+        t.add_column("#", width=4, justify="right")
+        t.add_column("Station", width=42)
         t.add_column("Country", width=14, style="dim")
         t.add_column("Quality", width=8, justify="center")
+        medals = {1: "🥇", 2: "🥈", 3: "🥉"}
         for i, s in enumerate(self._stations[:40], 1):
+            is_current = (
+                i == self._current + 1 and s.get("url") == current_url
+            )
+            rank = medals.get(i, str(i))
             name = s.get("name", "?")
-            if i == self._current + 1 and s.get("url") == self._player.get_current_url():
+            if s.get("url") in fav_urls:
+                name += " ★"
+            if is_current:
                 name = f"▶ {name}"
+                style = "bold green"
+            else:
+                style = ""
             t.add_row(
-                str(i),
-                _truncate(name, 38),
-                _truncate(s.get("country", ""), 14),
+                Text(rank, style="bold yellow" if i <= 3 else "cyan"),
+                Text(_truncate(name, 41), style=style or None),
+                _short_country(s.get("country", "")),
                 _quality_badge(s.get("bitrate", 0)),
             )
         self._console.print(t)
@@ -269,14 +366,38 @@ class RadioCLI:
             line += f"  ·  {_fmt_elapsed(int(time.time() - self._start_time))}"
         content.append("\n" + line, style=style)
 
+        # Status row: volume gauge + EQ preset
+        content.append("\n")
+        status = Text()
+        status.append("vol ", style="dim")
+        status.append(volume_bar(self._player.get_volume()))
+        eq = self._player.equalizer
+        if eq.enabled and eq.current_preset != "None":
+            status.append("   eq ", style="dim")
+            status.append(eq.current_preset, style="bold magenta")
+            status.append(" on", style="dim")
+        content.append_text(status)
+
+        grid = Table.grid(padding=(0, 2))
+        grid.add_column(vertical="middle")
+        grid.add_column(vertical="middle")
+        art = render_logo(s.get("logo", ""), s.get("name", "?"))
+        grid.add_row(art, content)
+
+        if state == "playing":
+            border = "green"
+        elif state in ("opening", "buffering", "reconnecting"):
+            border = "yellow"
+        else:
+            border = "red" if state in ("stopped", "ended", "error") else "cyan"
         p = Panel(
-            content,
+            grid,
             title="♪ Now Playing",
             title_align="left",
-            border_style="cyan",
-            box=box.ROUNDED,
+            border_style=border,
+            box=box.HEAVY if playing else box.ROUNDED,
             padding=(0, 2),
-            width=max(44, min(self._console.width or 64, 64)),
+            width=max(52, min(self._console.width or 64, 84)),
         )
         self._console.print(p)
 
@@ -291,7 +412,7 @@ class RadioCLI:
     def _cmd_loop(self) -> None:
         while True:
             try:
-                line = self._console.input("[bold cyan]>[/bold cyan] ").strip()
+                line = self._console.input("[bold cyan]❯[/bold cyan] ").strip()
                 if not line:
                     continue
                 if self._dispatch(line):
@@ -328,8 +449,8 @@ class RadioCLI:
         elif cmd in ("preload_status",):
             self._show_preload_status()
         elif cmd in ("refresh",):
-            self._console.print("[cyan]Refreshing...[/cyan]")
-            refresh_categories()
+            with self._console.status("[cyan]Refreshing all categories…[/cyan]", spinner="dots"):
+                refresh_categories()
             self._load_category(self._category)
             self._list_stations()
         elif cmd in ("info",):
@@ -409,20 +530,37 @@ class RadioCLI:
 
     def _cmd_search(self, args: list[str]) -> None:
         query = " ".join(args)
-        self._console.print(f"[cyan]Searching for '{query}'...[/cyan]")
-        results = fetch_stations(query, limit=30)
+        try:
+            with self._console.status(f"[cyan]Searching for '{query}'…[/cyan]", spinner="dots"):
+                results = fetch_stations(query, limit=30)
+        except Exception:
+            results = []
         if results:
             self._stations = results
             self._by_url = {s["url"]: s for s in self._stations}
             self._category = "search"
             self._list_stations()
         else:
-            self._console.print("[yellow]No results[/yellow]")
+            self._console.print(f"[yellow]No results for '{query}'[/yellow]")
 
     def _cmd_category(self, args: list[str]) -> None:
         cat = args[0].lower()
-        self._console.print(f"[cyan]Loading {cat}...[/cyan]")
-        self._load_category(cat)
+        if cat.isdigit():
+            idx = int(cat) - 1
+            if not (0 <= idx < len(CATEGORIES)):
+                self._console.print(
+                    f"[red]Invalid category number.[/red] [dim]1-{len(CATEGORIES)}: "
+                    + ", ".join(f"{i+1}={key}" for i, (_, key) in enumerate(CATEGORIES))
+                    + "[/dim]"
+                )
+                return
+            cat = CATEGORIES[idx][1]
+        try:
+            with self._console.status(f"[cyan]Loading {cat}…[/cyan]", spinner="dots"):
+                self._load_category(cat)
+        except Exception as e:
+            self._console.print(f"[red]Could not load '{cat}': {e}[/red]")
+            return
         self._list_stations()
 
     def _cmd_sort(self, args: list[str]) -> None:
@@ -446,14 +584,18 @@ class RadioCLI:
     def _cmd_volume(self, args: list[str]) -> None:
         try:
             vol = int(args[0])
-            self._player.set_volume(vol)
-            self._console.print(f"[green]Volume: {vol}[/green]")
         except (ValueError, IndexError):
             self._console.print("[red]Usage: v <0-100>[/red]")
+            return
+        vol = max(0, min(100, vol))
+        self._player.set_volume(vol)
+        self._console.print(Text.assemble(("VOL ", "dim"), volume_bar(vol)))
 
     def _cmd_mute(self) -> None:
         muted = self._player.toggle_mute()
-        self._console.print(f"[{'red' if muted else 'green'}]Mute: {'ON' if muted else 'OFF'}[/]")
+        icon = "🔇" if muted else "🔊"
+        color = "red" if muted else "green"
+        self._console.print(f"[{color}]{icon} Mute: {'ON' if muted else 'OFF'}[/]")
 
     def _cmd_fav(self, args: list[str]) -> None:
         try:
@@ -480,11 +622,49 @@ class RadioCLI:
 
     def _show_eq(self) -> None:
         eq = self._player.equalizer
-        self._console.print(f"[cyan]Preset: {eq.current_preset}[/cyan]")
-        self._console.print(f"[cyan]Bands: {eq.get_summary()}[/cyan]")
+        state = "on" if eq.enabled else "off"
+
+        def _meter(gain: float) -> Text:
+            half = 10
+            filled = int(round(abs(gain) / 20 * half))
+            t = Text()
+            if gain < 0:
+                t.append("█" * filled, style="bold red")
+                t.append("·" * (half - filled), style="dim")
+                t.append("┼", style="bold white")
+                t.append("·" * half, style="dim")
+            else:
+                t.append("·" * half, style="dim")
+                t.append("┼", style="bold white")
+                t.append("█" * filled, style="bold green")
+                t.append("·" * (half - filled), style="dim")
+            return t
+
+        grid = Table.grid(padding=(0, 2))
+        grid.add_column(justify="right", min_width=6)
+        grid.add_column()
+        grid.add_column(justify="right", width=7)
+        for i, label in enumerate(eq.BAND_LABELS):
+            gain = eq.get_bands()[i]
+            grid.add_row(
+                Text(label, style="cyan"),
+                _meter(gain),
+                Text(f"{gain:+.0f} dB", style="dim"),
+            )
+        self._console.print(Panel(
+            grid,
+            title=f"🎚 EQ · {eq.current_preset} ({state})",
+            title_align="left",
+            border_style="magenta",
+            box=box.ROUNDED,
+            padding=(0, 1),
+        ))
 
     def _cmd_eq(self, args: list[str]) -> None:
         if not args:
+            self._show_eq()
+            return
+        if args[0].lower() in ("ls", "list", "presets"):
             self._show_eq()
             return
         if args[0].lower() == "custom" and len(args) > 1:
@@ -500,10 +680,13 @@ class RadioCLI:
             self._player.equalizer.set_custom_bands(bands)
             self._console.print("[green]Custom EQ set[/green]")
             return
-        try:
-            preset = self._player.equalizer.resolve_preset(args[0])
-        except ValueError as e:
-            self._console.print(f"[red]Unknown preset '{args[0]}'. Options: {e}[/red]")
+        preset = _match_preset(args[0], self._player.equalizer.PRESETS)
+        if preset is None:
+            options = ", ".join(self._player.equalizer.PRESETS)
+            self._console.print(
+                f"[red]Unknown preset '{args[0]}'.[/red] "
+                f"[dim]Options: {options} — partial names work (e.g. 'eq bass')[/dim]"
+            )
             return
         self._player.toggle_equalizer(preset != "None")
         self._player.set_equalizer_preset(preset)
@@ -573,17 +756,63 @@ class RadioCLI:
         self._console.print(f"[green]Sleep in {mins} min[/green]")
 
     def _show_help(self) -> None:
-        self._console.print("[bold cyan]Commands[/bold cyan]")
-        self._console.print("[dim]Playback:[/dim] p <n> = play station | stop = stop")
-        self._console.print("[dim]          n/next | b/prev | r/rand[/dim]")
-        self._console.print("[dim]Browse:[/dim]  s <query> = search | cat <name|#> = category")
-        self._console.print("[dim]          ls = list | sort <name|bitrate|votes|country>[/dim]")
-        self._console.print("[dim]Audio:[/dim]   v <0-100> = volume | m = mute")
-        self._console.print("[dim]          f <n> = favorite | eq <preset> = equalizer[/dim]")
-        self._console.print("[dim]Record:[/dim]  record [name] = record | stoprec = stop")
-        self._console.print("[dim]Other:[/dim]   now = now playing | info = station details")
-        self._console.print("[dim]          sleep <min> = timer (re-run to cancel)[/dim]")
-        self._console.print("[dim]          q = quit | h = help | log [n] = logs[/dim]")
+        groups = [
+            ("▶  Playback", "bold green", [
+                ("<n> / p <n>", "Play station by list number"),
+                ("stop",         "Stop playback"),
+                ("n / next",     "Next station"),
+                ("b / prev",     "Previous station"),
+                ("r / rand",     "Random station"),
+                ("now",          "Current station + track + VLC state"),
+                ("info",         "Full station details & codec"),
+            ]),
+            ("🔎  Browse", "bold cyan", [
+                ("s <query>",    "Search Radio Browser"),
+                ("cat <name|#>", "Switch category"),
+                ("ls",           "Redraw station list"),
+                ("sort <key>",   "Sort: name · bitrate · votes · country"),
+            ]),
+            ("🎚  Audio", "bold magenta", [
+                ("v <0-100>",    "Set volume"),
+                ("m",            "Toggle mute"),
+                ("f <n>",        "Toggle station as favorite"),
+                ("eq [preset]",  "Show / apply EQ preset (partial ok)"),
+                ("eq custom …",  "Set all 10 bands (-20…+20 dB)"),
+                ("sleep <min>",  "Sleep timer (re-run to cancel)"),
+            ]),
+            ("⏺  Record", "bold red", [
+                ("record [name]", "Record current stream to MP3"),
+                ("stoprec",       "Stop recording, show saved file"),
+            ]),
+            ("⚙  System", "bold yellow", [
+                ("vlcinfo",      "Show libvlc version"),
+                ("datadir",      "Show config/data directory"),
+                ("log [N]",      "Print last N log lines"),
+                ("preload_status", "Background preload progress"),
+                ("refresh",      "Force-refresh all category caches"),
+                ("clean / cls",  "Clear terminal and redraw"),
+                ("h / q",        "Help · Quit and save session"),
+            ]),
+        ]
+        grid = Table.grid(padding=(0, 3))
+        grid.add_column(justify="right", min_width=16)
+        grid.add_column()
+        for title, style, rows in groups:
+            grid.add_row(Text(), Text())  # spacer
+            grid.add_row(Text(title, style=style), Text())
+            for cmd, desc in rows:
+                grid.add_row(
+                    Text(cmd, style="bold white"),
+                    Text(desc, style="dim"),
+                )
+        self._console.print(Panel(
+            grid,
+            title="Commands",
+            title_align="left",
+            border_style="dim cyan",
+            box=box.ROUNDED,
+            padding=(0, 2),
+        ))
 
     def _show_vlc_info(self) -> None:
         import vlc
@@ -638,7 +867,12 @@ class RadioCLI:
                 s = self._stations[self._current]
             save_session(self._player.get_volume(), s)
             self._player.shutdown()
-        self._console.print("[cyan]Goodbye![/cyan]")
+        self._console.print(Rule(style="dim cyan"))
+        bye = Text("  ")
+        bye.append("♪ ", style="bold magenta")
+        bye.append("Thanks for listening", style="bold cyan")
+        bye.append(" — session saved", style="dim")
+        self._console.print(bye)
 
 
 if __name__ == "__main__":

@@ -82,6 +82,7 @@ def is_station_alive(station: dict) -> bool:
 
 def filter_alive_stations(stations: list[dict]) -> list[dict]:
     """Check all stations concurrently; return only reachable ones."""
+    stations = [s for s in stations if s.get("url")]
     if not stations:
         return []
 

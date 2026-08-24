@@ -52,6 +52,23 @@ def test_unknown_eq_preset_is_error_not_crash(cli):
     cli._dispatch("eq doesnotexist")  # must print an error, not raise
 
 
+def test_eq_partial_preset_matches(cli):
+    # 'bass' should uniquely resolve to Bass Boost and enable it.
+    cli._dispatch("eq bass")
+    assert cli._player.equalizer.current_preset == "Bass Boost"
+    assert cli._player.equalizer.enabled is True
+
+
+def test_eq_list_shows_panel(cli):
+    cli._dispatch("eq ls")
+    cli._dispatch("eq list")
+
+
+def test_cat_numeric_category(cli):
+    cli._dispatch("cat 6")  # 6th category = jazz
+    assert cli._category == "jazz"
+
+
 def test_record_sanitizes_filename(cli):
     # Regression SEC-01: traversal/punctuation must not survive into the path.
     captured = {}

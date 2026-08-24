@@ -46,6 +46,7 @@ python -m radio_ps --check
 pip install -e .[dev]
 pytest
 ```
+Artwork renders with Unicode sextant blocks (Windows Terminal). For legacy terminals set `$env:RADIO_PS_ART = 'half'` before launching.
 Tests run without VLC installed (a fake `vlc` module is injected by `tests/conftest.py`).
 
 ---

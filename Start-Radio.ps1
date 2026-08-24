@@ -10,16 +10,11 @@ param(
     [switch]$Help
 )
 
-# ── Banner ────────────────────────────────────────────────────────────────────
-$banner = @"
-  ____  ____     ____          _ _
- |  _ \/ ___|   |  _ \ __ _ __| (_) ___
- | |_) \___ \   | |_) / _` / _` | |/ _ \
- |  __/ ___) |  |  _ < (_| | (_| | | (_) |
- |_|   |____/   |_| \_\__,_|\__,_|_|\___/
-  PowerShell Radio Pro v2.0 — Windows Native
-"@
-Write-Host $banner -ForegroundColor Cyan
+# The Python app renders its own gradient ASCII logo on startup,
+# so the launcher stays quiet to avoid a double banner.
+if (-not $Help -and -not $Check) {
+    Write-Host "  PowerShell Radio Pro - starting..." -ForegroundColor DarkCyan
+}
 
 # ── Help ──────────────────────────────────────────────────────────────────────
 if ($Help) {
@@ -98,7 +93,7 @@ Write-Host ""
 Write-Host "  Checking Python packages..." -ForegroundColor Cyan
 
 $needsInstall = $false
-foreach ($pkg in @("vlc", "rich", "requests")) {
+foreach ($pkg in @("vlc", "rich", "requests", "PIL")) {
     $result = & $pythonExe -c "import $pkg" 2>&1
     if ($LASTEXITCODE -ne 0) {
         $needsInstall = $true
@@ -148,3 +143,4 @@ if ($exitCode -ne 0) {
     Write-Host "  Radio exited with code $exitCode" -ForegroundColor Yellow
     Write-Host "  Run: .\Start-Radio.ps1 -Check  to diagnose issues" -ForegroundColor DarkGray
 }
+
