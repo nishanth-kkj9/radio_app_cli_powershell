@@ -1,46 +1,33 @@
-# Ignore everything
-*
-
-# Keep gitignore
-!.gitignore
-
-# Keep project folders
-!radio_ps/
-!radio_ps/**
-!.github/
-!.github/**
-!CHANGELOG.md
-!CONTRIBUTING.md
-!LICENSE
-!README.md
-
-# Ignore Python cache
-radio_ps/**/__pycache__/
-radio_ps/**/src/**/__pycache__/
-radio_ps/**/*.pyc
-
-# Ignore build artifacts
-radio_ps/src/*.egg-info/
+# Python cache
+__pycache__/
+*.py[cod]
 *.egg-info/
-radio_ps/build/
-radio_ps/dist/
+build/
+dist/
 
-# Ignore test/tooling caches
+# Test/tooling caches
 .pytest_cache/
-radio_ps/.pytest_cache/
+.coverage
+htmlcov/
 
-# Ignore virtual environment
+# Virtual environment
 venv/
 
-# Ignore zip files
+# Runtime data
+favorites.json
+recent.json
+session.json
+stats.json
+radio_log.txt
+
+# Dev artifacts
+_shots/
+_art_preview*
+_human_test*
+
+# Logs / archives
+*.log
 *.zip
 
-# Ignore logs
-*.log
-
-# Ignore runtime files
-radio_ps/**/favorites.json
-radio_ps/**/recent.json
-radio_ps/**/session.json
-radio_ps/**/stats.json
-radio_ps/**/radio_log.txt
+# Generated knowledge graph
+graphify-out/

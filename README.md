@@ -18,7 +18,7 @@ Built on **python-vlc** (libvlc bindings) for rock-solid audio with zero subproc
 ## Quick Start
 
 ```powershell
-# 1. Open PowerShell in the radio_ps folder
+# 1. Open PowerShell in the repository root
 # 2. Allow running scripts (one-time, if blocked):
 Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 
@@ -142,7 +142,7 @@ All data is stored in `%APPDATA%\PowerShellRadioPro\`:
 ## Architecture
 
 ```
-radio_ps/
+.                            # repository root
 ├── pyproject.toml              # Package config (src layout, deps, scripts)
 ├── README.md
 ├── Start-Radio.ps1            # PowerShell launcher
@@ -154,7 +154,8 @@ radio_ps/
 │   ├── services/          # station_service (with cache/preload)
 │   ├── ui/               # cli_ui (Rich terminal UI + command REPL)
 │   └── utils/            # logger, storage (atomic JSON writes)
-└── tests/               # Test directory
+├── tests/               # Test directory
+└── scripts/selfcheck.py  # Headless feature self-check
 ```
 
 ### Why python-vlc instead of cvlc+RC socket?

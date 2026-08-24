@@ -10,7 +10,7 @@ git clone https://github.com/your-username/radio_app_cli_powershell.git
 cd radio_app_cli_powershell
 
 # Install in development mode
-pip install -e radio_ps[dev]
+pip install -e .[dev]
 
 # Run the app
 python -m radio_ps
