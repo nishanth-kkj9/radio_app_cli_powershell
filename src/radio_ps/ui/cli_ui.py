@@ -12,39 +12,35 @@ from __future__ import annotations
 
 import os
 import re
-import sys
 import time
 import threading
-import queue as _queue
 import random as _random
 import datetime
 
 try:
-    import readline
+    # Availability probe: importing readline enables line editing on POSIX.
+    import readline  # noqa: F401
 except ImportError:
     pass
 
 from rich.console import Console
-from rich.live    import Live
 from rich.table   import Table
 from rich.panel   import Panel
 from rich.text    import Text
 from rich.rule    import Rule
 from rich         import box
 
-from radio_ps.core.config   import CATEGORIES, MAX_RESULTS
+from radio_ps import __version__
+from radio_ps.core.config   import CATEGORIES
 from radio_ps.core.player   import RadioPlayer
-from radio_ps.core.equalizer import Equalizer
 from radio_ps.core.api      import fetch_stations
 from radio_ps.services.station_service import (
     fetch_category,
-    filter_alive_stations,
     preload_categories,
     get_preload_status,
     start_refresh_timer,
     stop_refresh_timer,
     refresh_categories,
-    get_last_refresh_info,
 )
 from radio_ps.utils.storage import (
     load_favorites, save_favorites,
@@ -54,7 +50,7 @@ from radio_ps.utils.storage import (
 )
 from radio_ps.utils.logger import log, get_log_path
 from radio_ps.utils import paths
-from radio_ps.ui.art import render_logo, volume_bar
+from radio_ps.ui.art import render_logo, render_sixel, volume_bar, art_mode
 
 
 # ── Constants ──────────────────────────────────────────────────────────────────
@@ -62,7 +58,7 @@ from radio_ps.ui.art import render_logo, volume_bar
 _SPINNER     = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
 _MAX_MARQUEE = 60
 _APP_NAME    = "PowerShell Radio Pro"
-_APP_VER     = "2.0"
+_APP_VER     = __version__   # single source of truth: radio_ps.__init__
 
 # ── Startup logo ───────────────────────────────────────────────────────────────
 
@@ -317,6 +313,49 @@ class RadioCLI:
             )
         self._console.print(t)
 
+    def _clear_screen(self) -> None:
+        """Reliably clear the terminal.
+
+        Rich's Console.clear() only emits ANSI ``\\x1b[2J``, which classic
+        conhost under Windows PowerShell 5.1 mishandles - leaving the old
+        screen content visible. Using the native clear command (``cls`` on
+        Windows / ``clear`` elsewhere) guarantees a fully blank screen in the
+        terminal the app is attached to. Skipped when stdout is not a real
+        terminal (tests, scripts, pipes).
+        """
+        if not getattr(self._console, "is_terminal", False):
+            return
+        try:
+            if os.name == "nt":
+                os.system("cls")
+            else:
+                os.system("clear")
+        except Exception:
+            pass
+
+    def _redraw(self) -> None:
+        """Clear the terminal and redraw the current view.
+
+        Used by the `clean`/`cls`/`clear` command so the screen is actually
+        reset to a fresh, useful state (welcome header + playback status +
+        station list) instead of going blank.
+        """
+        self._clear_screen()
+        self._console.print(_gradient_logo())
+        title = Text("  ")
+        title.append("♪ ", style="bold magenta")
+        title.append(f"{_APP_NAME} v{_APP_VER}", style="bold cyan")
+        title.append("  ·  ", style="dim")
+        title.append(self._category or "", style="bold cyan")
+        title.append("  ·  ", style="dim")
+        title.append("type h for help", style="italic dim")
+        self._console.print(title)
+        self._console.print()
+        if self._player and self._player.is_playing():
+            self._show_now_playing()
+            self._sep()
+        self._list_stations()
+
     def _play_station(self, index: int | None = None) -> None:
         if index is None:
             if 0 <= self._current < len(self._stations):
@@ -353,6 +392,28 @@ class RadioCLI:
         ) else raw_title
         state = self._player.get_state_label()
         playing = self._player.is_playing()
+
+        # Sixel mode: true bitmap above a borderless info block. Rich mangles
+        # ESC sequences, so the sixel payload goes straight to stdout.
+        if art_mode() == "sixel":
+            sixel_art = render_sixel(s.get("logo", ""))
+            if sixel_art:
+                content = Text()
+                content.append(_clean_name(s.get("name", "?")), style="bold cyan")
+                if s.get("country"):
+                    content.append(f"\n{s['country']}", style="dim")
+                if title:
+                    content.append(f"\n♪ {title}", style="green")
+                label, style = _STATE_UI.get(state, ("• " + state, "cyan"))
+                line = f"{label}"
+                if state == "playing" and self._start_time:
+                    line += f"  ·  {_fmt_elapsed(int(time.time() - self._start_time))}"
+                content.append("\n" + line, style=style)
+                content.append("\nvol ", style="dim")
+                content.append_text(volume_bar(self._player.get_volume()))
+                self._console.file.write(sixel_art + "\n")
+                self._console.print(content)
+                return
 
         content = Text()
         content.append(_clean_name(s.get("name", "?")), style="bold cyan")
@@ -445,7 +506,7 @@ class RadioCLI:
         elif cmd in ("log",):
             self._show_log(args)
         elif cmd in ("clean", "cls", "clear"):
-            self._console.clear()
+            self._redraw()
         elif cmd in ("preload_status",):
             self._show_preload_status()
         elif cmd in ("refresh",):
@@ -495,6 +556,8 @@ class RadioCLI:
             self._player.stop()
             self._start_time = None
             self._console.print("[yellow]Stopped[/yellow]")
+        elif cmd in ("pause", "pp"):
+            self._cmd_pause()
         elif cmd == "sleep" and args:
             self._cmd_sleep(args)
         elif cmd.isdigit():
@@ -597,6 +660,18 @@ class RadioCLI:
         color = "red" if muted else "green"
         self._console.print(f"[{color}]{icon} Mute: {'ON' if muted else 'OFF'}[/]")
 
+    def _cmd_pause(self) -> None:
+        if not self._player.get_current_url():
+            self._console.print("[red]Nothing playing[/red]")
+            return
+        result = self._player.toggle_pause()
+        if result is None:
+            self._console.print("[yellow]Nothing to pause right now[/yellow]")
+        elif result:
+            self._console.print("[yellow]⏸ Paused — 'pause' to resume[/yellow]")
+        else:
+            self._console.print("[green]▶ Resumed[/green]")
+
     def _cmd_fav(self, args: list[str]) -> None:
         try:
             idx = int(args[0]) - 1
@@ -627,6 +702,8 @@ class RadioCLI:
         def _meter(gain: float) -> Text:
             half = 10
             filled = int(round(abs(gain) / 20 * half))
+            if gain and filled == 0:
+                filled = 1  # ±1 dB still deserves a visible notch
             t = Text()
             if gain < 0:
                 t.append("█" * filled, style="bold red")
@@ -660,12 +737,49 @@ class RadioCLI:
             padding=(0, 1),
         ))
 
+    def _show_eq_presets(self) -> None:
+        """List all available EQ presets, marking the active one."""
+        eq = self._player.equalizer
+        labels = eq.BAND_LABELS
+        t = Table(
+            show_header=False,
+            box=box.ROUNDED,
+            border_style="dim magenta",
+            padding=(0, 2),
+            title="🎚 Available EQ Presets",
+            title_justify="left",
+        )
+        t.add_column(width=2)       # current marker
+        t.add_column(min_width=14)  # preset name
+        t.add_column()              # band summary
+        for name, bands in eq.PRESETS.items():
+            current = name == eq.current_preset
+            if name == "None":
+                summary = "EQ off (bypass)"
+            elif name == "Flat":
+                summary = "all bands 0 dB"
+            elif name == "Custom":
+                summary = "set via: eq custom <b0…b9>"
+            else:
+                summary = "  ".join(f"{labels[i]} {g:+.0f}" for i, g in bands)
+            t.add_row(
+                Text("►" if current else "", style="bold green"),
+                Text(name, style="bold magenta" if current else "white"),
+                Text(summary, style="dim"),
+            )
+        self._console.print(t)
+        self._console.print(
+            "[dim]eq <preset>  apply (partial names ok: eq bass, eq jazz)  ·  "
+            "eq custom <b0…b9>  set all 10 bands (-20…+20 dB)[/dim]"
+        )
+
     def _cmd_eq(self, args: list[str]) -> None:
+
         if not args:
             self._show_eq()
             return
-        if args[0].lower() in ("ls", "list", "presets"):
-            self._show_eq()
+        if args[0].lower() in ("h", "help", "?", "ls", "list", "presets"):
+            self._show_eq_presets()
             return
         if args[0].lower() == "custom" and len(args) > 1:
             try:
@@ -683,10 +797,9 @@ class RadioCLI:
         preset = _match_preset(args[0], self._player.equalizer.PRESETS)
         if preset is None:
             options = ", ".join(self._player.equalizer.PRESETS)
-            self._console.print(
-                f"[red]Unknown preset '{args[0]}'.[/red] "
-                f"[dim]Options: {options} — partial names work (e.g. 'eq bass')[/dim]"
-            )
+            self._console.print(f"[red]Unknown preset '{args[0]}'.[/red]")
+            self._console.print(f"[dim]Options: {options}[/dim]")
+            self._console.print("[dim]Partial names work (e.g. 'eq bass')[/dim]")
             return
         self._player.toggle_equalizer(preset != "None")
         self._player.set_equalizer_preset(preset)
@@ -760,6 +873,7 @@ class RadioCLI:
             ("▶  Playback", "bold green", [
                 ("<n> / p <n>", "Play station by list number"),
                 ("stop",         "Stop playback"),
+                ("pause",        "Pause / resume"),
                 ("n / next",     "Next station"),
                 ("b / prev",     "Previous station"),
                 ("r / rand",     "Random station"),
@@ -849,7 +963,9 @@ class RadioCLI:
     def _show_preload_status(self) -> None:
         status = get_preload_status()
         for cat, done in status.items():
-            self._console.print(f"[{'green' if done else 'yellow'}]  {cat}: {'done' if done else 'pending'}[/]")
+            state = "done" if done else "pending"
+            color = "green" if done else "yellow"
+            self._console.print(f"[{color}]  {cat}: {state}[/]")
 
     def _sep(self) -> None:
         self._console.print()
