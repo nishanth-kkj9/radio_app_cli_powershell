@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import io
 import os
+import zlib
 
 import requests
 from rich.text import Text
@@ -25,9 +26,9 @@ from radio_ps.utils.paths import get_app_data_dir
 _LOGO_DIR = os.path.join(get_app_data_dir(), "cache", "logos")
 _MAX_LOGO_BYTES = 512 * 1024
 _TIMEOUT = 4
-_ART_COLS = 36          # character columns (sextant mode)
-_ART_ROWS = 24          # text rows; cols*2 == rows*3 keeps output square
-_PX_W = _ART_COLS * 2   # effective pixel grid: 72x72
+_ART_COLS = 24          # character columns (sextant mode)
+_ART_ROWS = 16          # text rows; cols*2 == rows*3 keeps output square
+_PX_W = _ART_COLS * 2   # effective pixel grid: 48x48
 _PX_H = _ART_ROWS * 3
 _BG = (26, 26, 34)      # letterbox background (slightly lighter than terminal)
 _FRAME = (86, 86, 100)  # subtle frame color baked around the art
@@ -97,41 +98,78 @@ def fetch_logo(url: str) -> bytes | None:
         return None
 
 
+def _badge_color(name: str) -> str:
+    """Pick a palette color deterministically from the station name.
+
+    Uses CRC-32 because Python's built-in str hash() is salted per process
+    (PYTHONHASHSEED) — hash()-based colors would change on every app restart.
+    """
+    return _PALETTE[zlib.crc32((name or "").encode("utf-8")) % len(_PALETTE)]
+
+
 def _monogram(name: str) -> Text:
-    """Deterministic two-tone badge (ring + fill + bold initials)."""
-    words = [w for w in name.split() if w]
+    """Two-tone album-card badge at the same footprint as the pixel art
+    (_ART_COLS x _ART_ROWS), so stations without a logo sit at the same size
+    and vertical alignment as stations with artwork.
+    """
+    words = [w for w in (name or "").split() if w]
     initials = "".join(w[0] for w in words[:2]).upper() or "?"
-    color = _PALETTE[hash(name) % len(_PALETTE)]
+    if len(initials) > 5:
+        initials = initials[:5]
+    color = _badge_color(name)
     dark = _PALETTE_DARK[color]
 
-    def _ring(s: str) -> Text:
-        return Text(s, style=f"bold white on {dark}")
+    inner_w = _ART_COLS - 2        # fill area between the two border columns
+    body_rows = _ART_ROWS - 2      # fill rows between the top/bottom ring
 
-    t = Text("\n")
-    t.append_text(_ring("╭────────╮"))
+    def center(s: str) -> str:
+        s = s[:inner_w]
+        pad = inner_w - len(s)
+        left = pad // 2
+        return " " * left + s + " " * (pad - left)
+
+    RING = f"bold white on {dark}"
+    BODY = f"on {color}"
+    LIGHT = f"bold white on {color}"
+
+    t = Text()
+    # Top ring
+    t.append("╭", style=RING)
+    t.append("─" * inner_w, style=RING)
+    t.append("╮", style=RING)
     t.append("\n")
-    t.append_text(_ring("│"))
-    t.append("        ", style=f"on {color}")
-    t.append_text(_ring("│"))
-    t.append("\n")
-    t.append_text(_ring("│"))
-    t.append(f"{initials:^8}", style=f"bold white on {color}")
-    t.append_text(_ring("│"))
-    t.append("\n")
-    t.append_text(_ring("│"))
-    t.append("        ", style=f"on {color}")
-    t.append_text(_ring("│"))
-    t.append("\n")
-    t.append_text(_ring("╰────────╯"))
+
+    # Special rows: initials centered, decorated with music notes above/below.
+    mid = body_rows // 2
+    designs = {
+        mid: initials,
+        max(0, mid - 3): "♪  ♪  ♪",
+        min(body_rows - 1, mid + 3): "♪  ♪  ♪",
+    }
+
+    for i in range(body_rows):
+        t.append("│", style=RING)
+        if i in designs:
+            t.append(center(designs[i]), style=LIGHT)
+        else:
+            t.append(" " * inner_w, style=BODY)
+        t.append("│", style=RING)
+        t.append("\n")
+
+    # Bottom ring
+    t.append("╰", style=RING)
+    t.append("─" * inner_w, style=RING)
+    t.append("╯", style=RING)
     return t
 
 
-def _prep_image(img):
-    """Normalize any logo image to an enhanced RGB square ready for rendering."""
-    from PIL import Image, ImageDraw, ImageEnhance, ImageOps
+_SIXEL_SIZE = 140       # pixel size for sixel (true bitmap) mode
 
-    # Composite transparency onto the letterbox color so alpha PNGs
-    # don't turn into black blobs.
+
+def _base_prep(img):
+    """Alpha-composite onto the letterbox color and letterbox to a square."""
+    from PIL import Image
+
     if img.mode in ("RGBA", "LA", "PA") or (
         img.mode == "P" and "transparency" in img.info
     ):
@@ -141,10 +179,17 @@ def _prep_image(img):
         img = bg
     img = img.convert("RGB")
 
-    # Letterbox onto a square so non-square logos are centered, not stretched.
     side = max(img.size)
     canvas = Image.new("RGB", (side, side), _BG)
     canvas.paste(img, ((side - img.width) // 2, (side - img.height) // 2))
+    return canvas
+
+
+def _prep_image(img):
+    """Normalize any logo image to an enhanced RGB square ready for rendering."""
+    from PIL import Image, ImageDraw, ImageEnhance, ImageOps
+
+    canvas = _base_prep(img)
 
     # Downscale to the exact output grid with a high-quality filter.
     canvas = canvas.resize((_PX_W, _PX_H), Image.LANCZOS)
@@ -155,8 +200,13 @@ def _prep_image(img):
     canvas = ImageOps.autocontrast(canvas, cutoff=(2, 2))
 
     # Keep the dark-logo lift / near-white tame behavior on top of the stretch.
-    pixels = list(canvas.getdata())
-    lum = sum(0.299 * r + 0.587 * g + 0.114 * b for r, g, b in pixels) / len(pixels)
+    # (getdata() is deprecated since Pillow 10 — read raw RGB bytes instead.)
+    raw = canvas.tobytes()
+    n = max(1, len(raw) // 3)
+    lum = sum(
+        0.299 * raw[i] + 0.587 * raw[i + 1] + 0.114 * raw[i + 2]
+        for i in range(0, len(raw), 3)
+    ) / n
     if lum < 60:
         canvas = ImageEnhance.Brightness(canvas).enhance(1.45)
         canvas = ImageEnhance.Contrast(canvas).enhance(1.15)
@@ -326,8 +376,7 @@ def render_logo(logo_url: str, name: str):
 
         img = Image.open(io.BytesIO(data))
         canvas = _prep_image(img)
-        mode = os.environ.get("RADIO_PS_ART", "sextant").strip().lower()
-        if mode == "half":
+        if art_mode() == "half":
             # Half blocks carry 1x2 pixels per char: shrink to the same
             # character footprint as sextant mode (cols x rows).
             from PIL import Image as _Image
@@ -338,6 +387,47 @@ def render_logo(logo_url: str, name: str):
     except Exception as e:
         log(f"Artwork render failed: {e}", "debug")
         return _monogram(name)
+
+
+def render_sixel(logo_url: str) -> str | None:
+    """Return a sixel escape sequence for the logo, or None on any failure."""
+    data = fetch_logo(logo_url) if logo_url else None
+    if not data:
+        return None
+    try:
+        from PIL import Image, ImageOps
+
+        from radio_ps.ui import sixel
+
+        img = Image.open(io.BytesIO(data))
+        canvas = _base_prep(img).resize((_SIXEL_SIZE, _SIXEL_SIZE), Image.LANCZOS)
+        canvas = ImageOps.autocontrast(canvas, cutoff=(2, 2))
+        return sixel.encode(canvas)
+    except Exception as e:
+        log(f"Sixel render failed: {e}", "debug")
+        return None
+
+
+def art_mode() -> str:
+    """
+    Effective artwork mode. RADIO_PS_ART (sextant|half|sixel) explicitly
+    overrides the default. Otherwise:
+
+      • Windows Terminal (WT_SESSION set) → 'sextant'
+        U+1FB00 block glyphs are well supported there; sixel is NOT auto-used
+        because WT only added true sixel rendering in 1.22+ and older builds
+        silently drop the payload, leaving a blank, borderless panel.
+      • every other terminal               → 'half'
+        Legacy conhost fonts often lack the U+1FB00 glyphs, so fall back to
+        the universal half-block renderer.
+
+    Sixel remains available as an explicit opt-in via RADIO_PS_ART=sixel for
+    terminals with confirmed sixel support.
+    """
+    mode = os.environ.get("RADIO_PS_ART", "").strip().lower()
+    if mode in ("sextant", "half", "sixel"):
+        return mode
+    return "sextant" if os.environ.get("WT_SESSION") else "half"
 
 
 def volume_bar(volume: int) -> Text:
