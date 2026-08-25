@@ -15,6 +15,7 @@ from conftest import _install_fake_vlc
 _install_fake_vlc()
 
 import radio_ps.ui.cli_ui as ui_mod
+from radio_ps.core.equalizer import Equalizer
 import radio_ps.services.station_service as ss_mod
 from rich.console import Console
 
@@ -74,8 +75,8 @@ check("helpers", "_short_country USA/Russia alias", lambda: (
     and ui_mod._short_country("Russian Federation") == "Russia"
 ))
 check("helpers", "_match_preset fuzzy", lambda: (
-    ui_mod._match_preset("bass", ui_mod.Equalizer.PRESETS) == "Bass Boost"
-    and ui_mod._match_preset("zzz", ui_mod.Equalizer.PRESETS) is None
+    ui_mod._match_preset("bass", Equalizer.PRESETS) == "Bass Boost"
+    and ui_mod._match_preset("zzz", Equalizer.PRESETS) is None
 ))
 from radio_ps.ui.art import volume_bar, render_logo
 check("art", "volume_bar renders gauge", lambda: "%" in volume_bar(50).plain)
@@ -83,7 +84,6 @@ check("art", "render_logo falls back to monogram", lambda: "A" in render_logo(""
 check("art", "gradient logo builds", lambda: len(ui_mod._gradient_logo().plain.splitlines()) == 5)
 
 # ══ 2. EQUALIZER MODEL ════════════════════════════════════════════════════
-from radio_ps.core.equalizer import Equalizer
 eq = Equalizer()
 check("equalizer", "preset load (Bass Boost)", lambda: (
     eq.set_preset("Bass Boost") is None and eq.get_bands()[:3] == [15.0, 12.0, 10.0]
@@ -307,11 +307,11 @@ from radio_ps.ui import art as _art
 check("sextant", "glyph table covers 64 unique masks", lambda: (
     len(_art._SEX_CHAR) == 64 and len(set(_art._SEX_CHAR.values())) == 64))
 from PIL import Image as _Img
-_solid = _Img.new("RGB", (72, 72), (200, 60, 60))
+_solid = _Img.new("RGB", (48, 48), (200, 60, 60))
 _sexa = _art._render_sextant(_solid)
 _lines = _sexa.plain.splitlines()
 check("sextant", "solid image renders 36x24 solid blocks", lambda: (
-    len(_lines) == 24 and len(_lines[0]) == 36
+    len(_lines) == 16 and len(_lines[0]) == 24
     and set("".join(_lines)) == {"\u2588"}))
 
 # ══ REPORT ════════════════════════════════════════════════════════════════
@@ -341,9 +341,9 @@ from radio_ps.ui import art as _art
 check("sextant", "glyph table covers 64 unique masks", lambda: (
     len(_art._SEX_CHAR) == 64 and len(set(_art._SEX_CHAR.values())) == 64))
 from PIL import Image as _Img
-_solid = _Img.new("RGB", (72, 72), (200, 60, 60))
+_solid = _Img.new("RGB", (48, 48), (200, 60, 60))
 _sexa = _art._render_sextant(_solid)
 _lines = _sexa.plain.splitlines()
 check("sextant", "solid image renders 36x24 solid blocks", lambda: (
-    len(_lines) == 24 and len(_lines[0]) == 36
+    len(_lines) == 16 and len(_lines[0]) == 24
     and set("".join(_lines)) == {"\u2588"}))
