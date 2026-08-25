@@ -254,6 +254,31 @@ class RadioPlayer:
         self._reconnect_count = 0
         self._monitor_gen    += 1
 
+    # ── Pause / Resume ────────────────────────────────────────────────────────
+
+    def toggle_pause(self) -> bool | None:
+        """
+        Toggle pause on the current stream.
+        Returns True if now paused, False if resumed,
+        or None when there is nothing to pause.
+        """
+        if not self._current_url or self._intentional_stop or self.reconnecting:
+            return None
+        with self._vlc_lock:
+            state = self._player.get_state()
+            if state in (vlc.State.Playing, vlc.State.Paused):
+                self._player.pause()   # libvlc pause() toggles
+                return self._player.get_state() == vlc.State.Paused
+        return None
+
+    def is_paused(self) -> bool:
+        return (
+            bool(self._current_url)
+            and not self._intentional_stop
+            and not self.reconnecting
+            and self._player.get_state() == vlc.State.Paused
+        )
+
     # ── Health monitor ────────────────────────────────────────────────────────
 
     def _health_loop(self):
@@ -405,8 +430,13 @@ class RadioPlayer:
         self._rec_instance = vlc.Instance("--no-video", "--quiet")
         self._rec_player   = self._rec_instance.media_player_new()
 
+        # Transcode to MP3 while capturing so the saved file is ALWAYS a valid
+        # .mp3 regardless of source codec — plain `mux=raw` passthrough only
+        # works for native MPEG Audio and produces broken files from
+        # OGG/Opus/FLAC streams.
         sout = (
-            f"#duplicate{{dst=std{{access=file,mux=raw,dst={output_path}}},"
+            "#transcode{vcodec=none,acodec=mp3,ab=192,channels=2,samplerate=44100}"
+            f":duplicate{{dst=std{{access=file,mux=raw,dst={output_path}}},"
             f"dst=nodisplay}}"
         )
         media = self._rec_instance.media_new(url, f"sout={sout}", "sout-keep")
