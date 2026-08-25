@@ -12,9 +12,10 @@ Usage:
 
 from __future__ import annotations
 
-import os
 import sys
 import argparse
+
+from radio_ps import __version__
 
 
 def _check_dependencies() -> bool:
@@ -75,7 +76,7 @@ def _check_dependencies() -> bool:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="radio",
-        description=f"PowerShell Radio Pro — Internet radio for Windows PowerShell",
+        description="PowerShell Radio Pro — Internet radio for Windows PowerShell",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Categories:
@@ -101,7 +102,7 @@ Examples:
     parser.add_argument(
         "--version",
         action="version",
-        version="PowerShell Radio Pro 2.0",
+        version=f"PowerShell Radio Pro {__version__}",
     )
     args = parser.parse_args()
 

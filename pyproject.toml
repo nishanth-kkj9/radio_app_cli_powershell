@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "radio-ps"
-version = "2.0"
+dynamic = ["version"]
 description = "PowerShell Radio Pro - Internet radio for Windows PowerShell"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -38,6 +38,7 @@ dependencies = [
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
+    "ruff>=0.6",
 ]
 
 [project.scripts]
@@ -45,6 +46,24 @@ radio = "radio_ps.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.dynamic]
+version = {attr = "radio_ps.__version__"}
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+extend-exclude = ["venv", "graphify-out"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+# One-statement-per-line rules conflict with long-standing compact style in
+# this codebase (table-driven one-liners); not worth churning 20+ sites.
+ignore = ["E701", "E702"]
+
+[tool.ruff.lint.per-file-ignores]
+# selfcheck.py sets sys.path before imports and has wide ASCII-table output.
+"scripts/*" = ["E402", "E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
