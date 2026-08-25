@@ -26,6 +26,27 @@ _BAD_FAVICON = {"", "null", "none", "undefined", "false", "0"}
 _session: requests.Session | None = None
 
 
+def _map_station(s: dict) -> dict | None:
+    """Convert a raw Radio Browser record into the app's station dict.
+
+    Returns None when the stream URL is missing or uses a disallowed scheme,
+    so unsafe records never reach the player.
+    """
+    stream_url = s.get("url_resolved") or s.get("url", "")
+    if not stream_url or not is_safe_url(stream_url):
+        return None
+    return {
+        "name":    s.get("name", "Unknown").strip(),
+        "url":     stream_url,
+        "logo":    _clean_favicon(s.get("favicon", "")),
+        "country": s.get("country", "").strip(),
+        "tags":    s.get("tags",    "").strip(),
+        "bitrate": s.get("bitrate", 0),
+        "votes":   s.get("votes",   0),
+        "codec":   s.get("codec",   "").strip(),
+    }
+
+
 def _get_session() -> requests.Session:
     global _session
     if _session is None:
@@ -109,19 +130,9 @@ def fetch_stations(query: str, limit: int = 30) -> list[dict]:
         )
         stations = []
         for s in data:
-            stream_url = s.get("url_resolved") or s.get("url", "")
-            if not stream_url or not is_safe_url(stream_url):
-                continue
-            stations.append({
-                "name":    s.get("name", "Unknown").strip(),
-                "url":     stream_url,
-                "logo":    _clean_favicon(s.get("favicon", "")),
-                "country": s.get("country", "").strip(),
-                "tags":    s.get("tags",    "").strip(),
-                "bitrate": s.get("bitrate", 0),
-                "votes":   s.get("votes",   0),
-                "codec":   s.get("codec",   "").strip(),
-            })
+            mapped = _map_station(s)
+            if mapped:
+                stations.append(mapped)
         return stations
     except Exception as e:
         log(f"API fetch error for '{query}': {e}", "error")
@@ -142,19 +153,9 @@ def fetch_stations_by_tag(tag: str, limit: int = 30) -> list[dict]:
         )
         stations = []
         for s in data:
-            stream_url = s.get("url_resolved") or s.get("url", "")
-            if not stream_url or not is_safe_url(stream_url):
-                continue
-            stations.append({
-                "name":    s.get("name", "Unknown").strip(),
-                "url":     stream_url,
-                "logo":    _clean_favicon(s.get("favicon", "")),
-                "country": s.get("country", "").strip(),
-                "tags":    s.get("tags",    "").strip(),
-                "bitrate": s.get("bitrate", 0),
-                "votes":   s.get("votes",   0),
-                "codec":   s.get("codec",   "").strip(),
-            })
+            mapped = _map_station(s)
+            if mapped:
+                stations.append(mapped)
         return stations
     except Exception as e:
         log(f"API tag fetch error for '{tag}': {e}", "error")
