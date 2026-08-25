@@ -191,7 +191,7 @@ def test_sextant_bits_match_mask_layout():
     assert _SEX_BITS[0b110000] == [False, False, False, False, True, True]   # bottom row
 
 
-def _solid_canvas(rgb, size=(6, 6)):
+def _solid_canvas(rgb, size=(48, 48)):
     from PIL import Image
 
     return Image.new("RGB", size, rgb)
@@ -202,9 +202,8 @@ def test_render_sextant_solid_color_uses_full_block():
 
     art = _render_sextant(_solid_canvas((200, 50, 50)))
     lines = art.plain.splitlines()
-    assert len(lines) == 2                              # 6px tall -> 2 sextant rows
+    assert len(lines) == 16                             # 48px tall -> 16 sextant rows
     assert set(lines[0]) == {"\u2588"}                  # solid -> full blocks everywhere
-    assert "on " not in art.spans[0].style or True      # style present; bg equals fg for full block
 
 
 def test_render_half_fallback_shape():
@@ -223,13 +222,87 @@ def test_monogram_deterministic_and_contains_initials():
     assert "A" in a.plain and "B" in a.plain
 
 
+def test_badge_color_stable_across_processes():
+    # Regression: badge colors must not use salted str hash(), which changes
+    # every process. CRC-32 of the name bytes is stable across restarts.
+    import zlib
+
+    from radio_ps.ui.art import _PALETTE, _badge_color
+
+    assert _badge_color("") == _PALETTE[zlib.crc32(b"") % len(_PALETTE)]
+    for name in ("Alpha Beta FM", "Radio City", "Жанна FM"):
+        expected = _PALETTE[zlib.crc32(name.encode("utf-8")) % len(_PALETTE)]
+        assert _badge_color(name) == expected
+
+
+def test_map_station_rejects_unsafe_records():
+    from radio_ps.core.api import _map_station
+
+    good = {
+        "name": "  Test FM ",
+        "url_resolved": "http://example.com/stream",
+        "favicon": "",
+        "country": " Germany ",
+        "tags": "pop",
+        "bitrate": 128,
+        "votes": 5,
+        "codec": "MP3",
+    }
+    st = _map_station(good)
+    assert st is not None
+    assert st["name"] == "Test FM"
+    assert st["country"] == "Germany"
+    assert st["url"] == "http://example.com/stream"
+    # Missing / unsafe URLs must be dropped entirely
+    assert _map_station({"url": ""}) is None
+    assert _map_station({"url": "javascript:alert(1)"}) is None
+    # Falls back to plain url when url_resolved absent
+    assert _map_station({"name": "x", "url": "https://a.y/s"})["url"] == "https://a.y/s"
+
+
+def test_version_single_source_of_truth():
+    import radio_ps
+    from radio_ps.main import __version__ as main_ver
+    from radio_ps.ui import cli_ui
+
+    assert main_ver == radio_ps.__version__
+    assert cli_ui._APP_VER == radio_ps.__version__
+    assert isinstance(radio_ps.__version__, str) and radio_ps.__version__
+
+
+def test_station_cache_survives_restart(data_dir):
+    # The category cache must persist to disk and come back on next launch.
+    from radio_ps.services import station_service as ss
+
+    ss._cache.clear()
+    ss._disk_loaded = False
+    cached = [{"url": "http://persist", "name": "Persist FM", "bitrate": 128}]
+    ss._cache["top"] = (time.time(), [dict(cached[0])])
+    ss._save_cache_disk()
+
+    ss._cache.clear()          # simulate a process restart
+    ss._disk_loaded = False
+    out = ss.fetch_category("top")     # cache hit → no network
+    assert out == cached
+
+
+def test_refresh_backoff_grows_and_caps():
+    from radio_ps.core.config import REFRESH_INTERVAL
+    from radio_ps.services.station_service import _next_refresh_interval as nxt
+
+    assert nxt(0) == float(REFRESH_INTERVAL)
+    assert nxt(-3) == float(REFRESH_INTERVAL)   # negative streak guarded
+    assert nxt(1) == float(REFRESH_INTERVAL) * 2
+    assert nxt(99) == 3600.0                    # capped at 1 hour
+
+
 def test_prep_image_outputs_exact_grid():
     from PIL import Image
     from radio_ps.ui.art import _prep_image, _PX_W, _PX_H
 
     img = Image.new("RGB", (37, 11), (120, 40, 200))
     canvas = _prep_image(img)
-    assert canvas.size == (_PX_W, _PX_H) == (72, 72)
+    assert canvas.size == (_PX_W, _PX_H) == (48, 48)
 
 
 def test_art_mode_env_override_switches_renderer(monkeypatch):
@@ -243,10 +316,10 @@ def test_art_mode_env_override_switches_renderer(monkeypatch):
     monkeypatch.setattr(art, "fetch_logo", lambda u: buf.getvalue())
     monkeypatch.setenv("RADIO_PS_ART", "half")
     half = art.render_logo("u", "X").plain.splitlines()
-    assert len(half) == 24 and set(half[0]) == {"\u2580"}
+    assert len(half) == 16 and set(half[0]) == {"\u2580"}
     monkeypatch.setenv("RADIO_PS_ART", "sextant")
     sex = art.render_logo("u", "X").plain.splitlines()
-    assert len(sex) == 24 and len(sex[0]) == 36
+    assert len(sex) == 16 and len(sex[0]) == 24
 
 
 def test_render_logo_falls_back_to_monogram_on_bad_image(monkeypatch):
@@ -255,3 +328,106 @@ def test_render_logo_falls_back_to_monogram_on_bad_image(monkeypatch):
     monkeypatch.setattr(art, "fetch_logo", lambda u: b"not-an-image")
     out = art.render_logo("u", "Alpha Beta")
     assert "A" in out.plain and "B" in out.plain
+
+
+# ── Sixel encoder ─────────────────────────────────────────────────────────────
+
+def test_sixel_encode_structure():
+    from PIL import Image
+
+    from radio_ps.ui.sixel import encode
+
+    img = Image.new("RGB", (12, 12), (255, 0, 0))
+    out = encode(img)
+    assert out.startswith("\x1bPq") and out.endswith("\x1b\\")
+    assert '"1;1;12;12' in out                 # raster attrs carry size
+    assert "#0;2;100;0;0" in out               # red defined on 0-100 scale
+
+
+def test_sixel_height_not_multiple_of_six():
+    from PIL import Image
+
+    from radio_ps.ui.sixel import encode
+
+    out = encode(Image.new("RGB", (6, 7), (0, 255, 0)))
+    body = out[len("\x1bPq"):out.index("\x1b\\")]
+    assert body.count("-") == 1
+
+
+def test_art_mode_env_parsing(monkeypatch):
+    from radio_ps.ui.art import art_mode
+
+    monkeypatch.setenv("RADIO_PS_ART", "sixel")
+    assert art_mode() == "sixel"
+    monkeypatch.setenv("RADIO_PS_ART", "half")
+    assert art_mode() == "half"
+    monkeypatch.setenv("RADIO_PS_ART", "junk")
+    monkeypatch.delenv("WT_SESSION", raising=False)
+    assert art_mode() == "half"
+    monkeypatch.setenv("WT_SESSION", "x")
+    assert art_mode() == "sextant"
+    monkeypatch.delenv("RADIO_PS_ART")
+    monkeypatch.delenv("WT_SESSION", raising=False)
+    assert art_mode() == "half"
+    monkeypatch.setenv("WT_SESSION", "x")
+    assert art_mode() == "sextant"
+
+
+def test_render_sixel_returns_sequence(monkeypatch):
+    import io as _io
+
+    from PIL import Image
+    from radio_ps.ui import art
+
+    buf = _io.BytesIO()
+    Image.new("RGB", (40, 40), (10, 10, 240)).save(buf, "PNG")
+    monkeypatch.setattr(art, "fetch_logo", lambda u: buf.getvalue())
+    out = art.render_sixel("u")
+    assert out is not None and out.startswith("\x1bPq")
+
+
+def test_render_sixel_none_without_logo(monkeypatch):
+    from radio_ps.ui import art
+
+    monkeypatch.setattr(art, "fetch_logo", lambda u: None)
+    assert art.render_sixel("u") is None
+
+
+# ── CLI screen clearing ──────────────────────────────────────────────────────
+
+def _fake_cli(is_terminal):
+    import io
+
+    from rich.console import Console
+    from radio_ps.ui import cli_ui
+
+    cli = cli_ui.RadioCLI.__new__(cli_ui.RadioCLI)
+    cli._console = Console(
+        file=io.StringIO(), force_terminal=is_terminal, color_system=None
+    )
+    return cli
+
+
+def test_clear_screen_uses_native_clear(monkeypatch):
+    # On a real terminal the platform clear command must be invoked.
+    import os
+
+    from radio_ps.ui import cli_ui
+
+    cli = _fake_cli(is_terminal=True)
+    calls = []
+    monkeypatch.setattr(cli_ui.os, "system", lambda cmd: calls.append(cmd) or 0)
+    cli._clear_screen()
+    expected = "cls" if os.name == "nt" else "clear"
+    assert calls == [expected]
+
+
+def test_clear_screen_noop_without_terminal(monkeypatch):
+    # Pipes/tests must never shell out to cls/clear.
+    from radio_ps.ui import cli_ui
+
+    cli = _fake_cli(is_terminal=False)
+    calls = []
+    monkeypatch.setattr(cli_ui.os, "system", lambda cmd: calls.append(cmd) or 0)
+    cli._clear_screen()
+    assert calls == []

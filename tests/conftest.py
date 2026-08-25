@@ -43,6 +43,7 @@ class _FakeEventManager:
 class _FakeMedia:
     def __init__(self, *args):
         self._meta = {}
+        self.options = list(args)
 
     def add_option(self, opt):
         pass
@@ -70,6 +71,12 @@ class _FakeMediaPlayer:
 
     def stop(self):
         self.state = _FakeState.Stopped
+
+    def pause(self):
+        # libvlc pause() toggles between playing and paused
+        self.state = (
+            _FakeState.Playing if self.state == _FakeState.Paused else _FakeState.Paused
+        )
 
     def audio_set_volume(self, vol):
         self.volume = vol

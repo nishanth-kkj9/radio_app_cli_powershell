@@ -1,7 +1,5 @@
 """CLI dispatch regression tests (run on the fake vlc module from conftest)."""
 
-import pytest
-
 
 def test_cli_helpers():
     from radio_ps.ui.cli_ui import _clean_name, _fmt_elapsed, _quality_badge, _truncate
@@ -50,6 +48,31 @@ def test_eq_wiring_enables_equalizer(cli):
 
 def test_unknown_eq_preset_is_error_not_crash(cli):
     cli._dispatch("eq doesnotexist")  # must print an error, not raise
+
+
+def test_pause_resumes_playback(cli):
+    cli._stations = [{"name": "X", "url": "http://example.com/s"}]
+    cli._dispatch("p 1")
+    cli._dispatch("pause")
+    assert cli._player.is_paused() is True
+    cli._dispatch("pause")
+    assert cli._player.is_paused() is False
+
+
+def test_pause_without_stream_is_safe(cli):
+    cli._player._current_url = None
+    cli._dispatch("pause")            # must print an error, not raise
+    assert cli._player.toggle_pause() is None
+
+
+def test_record_transcodes_to_mp3(cli):
+    # Recording must produce valid MP3 for ANY source codec (OGG included),
+    # so the sout chain has to carry a transcode step.
+    ok = cli._player.record("http://example.com/stream.ogg", "rec.mp3")
+    assert ok is True
+    opts = cli._player._rec_player.media.options
+    assert any("acodec=mp3" in str(o) for o in opts)
+    cli._player.stop_recording()
 
 
 def test_eq_partial_preset_matches(cli):
