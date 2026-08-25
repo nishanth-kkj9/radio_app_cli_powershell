@@ -12,12 +12,14 @@ Key behaviours:
 
 from __future__ import annotations
 
+import json
+import os
 import threading
 import time
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
-from radio_ps.core.api import fetch_stations, fetch_stations_by_tag
+from radio_ps.core.api import fetch_stations
 from radio_ps.core.config import (
     MAX_RESULTS,
     MAX_WORKERS,
@@ -28,6 +30,7 @@ from radio_ps.core.config import (
     ALIVE_TIMEOUT,
 )
 from radio_ps.utils.logger import log
+from radio_ps.utils.paths import get_app_data_dir
 
 # ── In-memory cache: category → (timestamp, [station, …]) ─────────────────────
 _cache:      dict[str, tuple[float, list[dict]]] = {}
@@ -45,6 +48,67 @@ _refresh_status_lock  = threading.Lock()
 _refresh_stop_event          = threading.Event()
 _consecutive_zero_alive      = 0
 _consecutive_zero_alive_lock = threading.Lock()
+
+
+# ── Disk persistence ───────────────────────────────────────────────────────────
+# Category caches survive restarts: written atomically after every successful
+# fetch/refresh, loaded lazily on the first cache lookup. Fail-soft throughout.
+
+_disk_loaded = False
+
+
+def _cache_file() -> str:
+    return os.path.join(get_app_data_dir(), "cache", "stations.json")
+
+
+def _save_cache_disk() -> None:
+    """Persist the in-memory category cache to disk (atomic write, fail-soft)."""
+    try:
+        path = _cache_file()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with _cache_lock:
+            payload = {
+                cat: {"t": ts, "stations": sts}
+                for cat, (ts, sts) in _cache.items()
+            }
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+        os.replace(tmp, path)
+    except (OSError, TypeError, ValueError) as e:
+        log(f"Station cache save failed: {e}", "debug")
+
+
+def _load_cache_disk() -> None:
+    """Load the persisted cache once per process (fail-soft)."""
+    global _disk_loaded
+    if _disk_loaded:
+        return
+    _disk_loaded = True
+    try:
+        path = _cache_file()
+        if not os.path.exists(path):
+            return
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        if not isinstance(payload, dict):
+            return
+        with _cache_lock:
+            for cat, entry in payload.items():
+                try:
+                    ts = float(entry["t"])
+                    stations = [
+                        s for s in entry["stations"]
+                        if isinstance(s, dict) and s.get("url")
+                    ]
+                except (KeyError, TypeError, ValueError):
+                    continue
+                # setdefault: never clobber fresher in-memory entries
+                if stations:
+                    _cache.setdefault(cat, (ts, stations))
+        log("Loaded persisted station cache", "info")
+    except (OSError, ValueError) as e:
+        log(f"Station cache load failed: {e}", "debug")
 
 
 # ── Liveness check ─────────────────────────────────────────────────────────────
@@ -103,8 +167,10 @@ def filter_alive_stations(stations: list[dict]) -> list[dict]:
                 if not alive:
                     dead_list.append(s.get("name", s.get("url", "?")))
         except TimeoutError:
+            done = len(results)
             log(
-                f"Alive check timed out; using {len(results)} completed result(s) of {len(stations)}",
+                f"Alive check timed out; using {done} completed result(s) "
+                f"of {len(stations)}",
                 "warning",
             )
 
@@ -151,6 +217,7 @@ def fetch_category(
 ) -> list[dict]:
     """Fetch a category, using cache if available and fresh."""
     if use_cache:
+        _load_cache_disk()
         with _cache_lock:
             if category in _cache:
                 ts, cached = _cache[category]
@@ -167,6 +234,8 @@ def fetch_category(
         if category in PRELOAD_CATEGORIES:
             with _preload_status_lock:
                 _preload_status[category] = True
+        if fresh:
+            _save_cache_disk()
     else:
         log(f"Got 0 results for '{category}' — preserving old cache", "warning")
         with _cache_lock:
@@ -249,6 +318,9 @@ def refresh_categories() -> None:
         else:
             _consecutive_zero_alive = 0
 
+    if total_alive:
+        _save_cache_disk()
+
     with _refresh_status_lock:
         global _last_refresh_time, _last_refresh_status
         _last_refresh_time   = time.time()
@@ -265,12 +337,31 @@ def get_last_refresh_info() -> tuple[str, str]:
         return ts, _last_refresh_status
 
 
+def _next_refresh_interval(streak: int) -> float:
+    """Exponential back-off when full refreshes keep returning nothing.
+
+    Doubles per consecutive empty refresh, capped at 1 hour — the docstring
+    always promised back-off; now it actually happens.
+    """
+    return min(float(REFRESH_INTERVAL) * (2 ** min(max(streak, 0), 5)), 3600.0)
+
+
 def _refresh_loop() -> None:
-    while not _refresh_stop_event.wait(REFRESH_INTERVAL):
+    interval = REFRESH_INTERVAL
+    while not _refresh_stop_event.wait(interval):
         try:
             refresh_categories()
         except Exception as e:
             log(f"Refresh loop error: {e}", "error")
+        finally:
+            with _consecutive_zero_alive_lock:
+                streak = _consecutive_zero_alive
+            interval = _next_refresh_interval(streak)
+            if streak:
+                log(
+                    f"Next refresh in {int(interval)}s (failure streak: {streak})",
+                    "warning",
+                )
 
 
 def start_refresh_timer() -> None:
