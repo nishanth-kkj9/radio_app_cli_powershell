@@ -1,33 +1,47 @@
-# Python cache
+# ── Python ──────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.egg-info/
 build/
 dist/
 
-# Test/tooling caches
+# ── Virtual environments ───────────────────────────────────────────────
+venv/
+.venv/
+env/
+
+# ── Test / coverage tooling ────────────────────────────────────────────
 .pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
 
-# Virtual environment
-venv/
-
-# Runtime data
+# ── Runtime data (lives in %APPDATA% by default; catch strays) ─────────
 favorites.json
 recent.json
 session.json
 stats.json
 radio_log.txt
 
-# Dev artifacts
+# ── Dev artifacts ───────────────────────────────────────────────────────
 _shots/
 _art_preview*
 _human_test*
 
-# Logs / archives
+# ── Generated knowledge graph ──────────────────────────────────────────
+graphify-out/
+
+# ── Logs / archives / temp ─────────────────────────────────────────────
 *.log
 *.zip
+*.tmp
 
-# Generated knowledge graph
-graphify-out/
+# ── OS junk (Windows) ──────────────────────────────────────────────────
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ── Editors ────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
