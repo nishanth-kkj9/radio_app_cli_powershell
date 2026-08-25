@@ -50,7 +50,8 @@ def _ensure_migrated() -> None:
         return
     _migrated = True
     # Legacy dir was <pkg>/radio_ps derived from this file's old parents.
-    legacy = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "radio_ps"))
+    here = os.path.dirname(os.path.abspath(__file__))
+    legacy = os.path.normpath(os.path.join(here, "..", "..", "radio_ps"))
     for name in ("favorites.json", "recent.json", "session.json"):
         dst = _file(name)
         src = os.path.join(legacy, name)

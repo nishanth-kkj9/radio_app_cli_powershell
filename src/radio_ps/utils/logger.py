@@ -33,7 +33,7 @@ def _ensure_handler() -> None:
             datefmt="%Y-%m-%d %H:%M:%S",
         ))
         _logger.addHandler(fh)
-    except OSError as e:
+    except OSError:
         # No writable data dir - drop messages instead of crashing the app.
         _logger.addHandler(logging.NullHandler())
 
