@@ -12,6 +12,7 @@ env/
 
 # ── Test / coverage tooling ────────────────────────────────────────────
 .pytest_cache/
+.ruff_cache/
 .coverage
 .coverage.*
 htmlcov/
