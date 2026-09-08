@@ -1,208 +1,266 @@
 # PowerShell Radio Pro
 
-![Version](https://img.shields.io/badge/version-2.0-blue) ![Python](https://img.shields.io/badge/python-3.9%2B-green) ![License](https://img.shields.io/badge/license-MIT-lightgrey)
+[![CI](https://github.com/nishanth-kkj9/radio_app_cli_powershell/actions/workflows/ci.yml/badge.svg)](https://github.com/nishanth-kkj9/radio_app_cli_powershell/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python&logoColor=white)
+![Platform](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows&logoColor=white)
+![VLC](https://img.shields.io/badge/audio-libVLC-FF8800?logo=vlc&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-Internet radio player for **Windows PowerShell** — fully native, no WSL2, no Linux tools.
-Built on **python-vlc** (libvlc bindings) for rock-solid audio with zero subprocess hacks.
+A Windows-native internet radio player designed for PowerShell and Windows Terminal. It combines **Radio Browser** station discovery, **libVLC** playback through `python-vlc`, a Rich terminal interface, station artwork, a 10-band equalizer, favorites/history, background caching, reconnect logic, and MP3 recording.
 
-## Features
+> **Status:** Beta (`2.0`). The project is Windows-focused and expects a local 64-bit VLC installation when using 64-bit Python.
 
-- 📡 **Live stations** from the Radio Browser network (multi-mirror, auto-retry)
-- 🔁 **Self-healing playback** — event-driven reconnect with exponential backoff
-- 🎨 **Sextant pixel art** — station logos rendered at 72×72 px in your terminal
-- 🎚 **10-band equalizer** with presets and manual band control
-- ⏺ **Stream recording** to MP3 in parallel with playback
-- ⭐ **Favorites & history** with session restore (volume + last station)
-- 💤 Sleep timer, live ICY track metadata, background category preloading
+## Highlights
+
+- 📻 Radio Browser discovery through multiple API mirrors
+- ▶️ Direct `python-vlc` / libVLC playback — no `cvlc` subprocess or RC socket
+- 🔁 Event-driven recovery plus periodic health checks and bounded reconnects
+- 🎚 10-band EQ with presets and custom `-20..+20 dB` gains
+- 🎨 Unicode sextant artwork, Sixel bitmap output, and half-block fallback
+- ⭐ Favorites, recent stations, and session restore
+- 💾 Persistent station/category cache with atomic writes
+- ⏱ Sleep timer and live ICY metadata
+- 🎙 Stream recording with MP3 transcoding
+- 🧪 Pytest suite with a fake VLC implementation, so most tests do not need VLC
+- 🪟 PowerShell launcher with dependency diagnostics and UTF-8 terminal setup
 
 ## Requirements
 
-| Requirement | Version | Notes |
+| Requirement | Supported | Notes |
 |---|---|---|
-| [Python](https://www.python.org/downloads/) | 3.9+ | Check "Add to PATH" during install |
-| [VLC](https://www.videolan.org/vlc/) | 3.x 64-bit | Must match Python bitness |
-| Windows Terminal | any | Recommended for Unicode/color/sextant glyphs |
+| Windows | Supported platform | The project is intentionally Windows-focused |
+| Python | 3.9+ | 64-bit Python is recommended when using 64-bit VLC |
+| VLC | 3.x | `libvlc.dll` must be available to `python-vlc` |
+| Windows Terminal | Recommended | Best support for Unicode artwork and truecolor |
 
-## Quick Start
+Python dependencies are declared in `pyproject.toml`; development dependencies add `pytest`, `pytest-cov`, and `ruff`.
+
+## Installation
+
+### Recommended: PowerShell launcher
+
+From the repository root:
 
 ```powershell
-# 1. Open PowerShell in the repository root
-
-# 2. Allow running scripts (one-time, if blocked):
 Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
-
-# 3. Run
 .\Start-Radio.ps1
-
-# Start on a specific category
-.\Start-Radio.ps1 -Category jazz
-.\Start-Radio.ps1 -Category hindi
-
-# Check dependencies
-.\Start-Radio.ps1 -Check
 ```
 
-The launcher locates Python and VLC, installs missing packages, and starts the app.
+The launcher locates Python, checks for VLC, installs the editable package if required, configures UTF-8 console I/O, and starts the application.
 
-### Manual install
+Useful launcher options:
 
 ```powershell
-pip install -e .
-python -m radio_ps            # Top Charts
-python -m radio_ps -c jazz    # specific category
-python -m radio_ps --check    # diagnose installation
+.\Start-Radio.ps1 -Help
+.\Start-Radio.ps1 -Check
+.\Start-Radio.ps1 -Category jazz
 ```
 
-## Commands
+### Development installation
+
+```powershell
+python -m pip install -e .[dev]
+python -m radio_ps
+```
+
+The package also exposes the `radio` console entry point:
+
+```powershell
+radio
+radio --version
+radio --check
+radio --category jazz
+```
+
+## Categories
+
+Built-in browsing categories are:
+
+`top` · `hindi` · `kannada` · `pop` · `rock` · `jazz` · `classical` · `news` · `favorites` · `recent`
+
+The first eight are fetched from Radio Browser. `favorites` and `recent` are local views maintained by the application.
+
+## Command reference
 
 ### Playback
 
-| Command | Description |
+| Command | Action |
 |---|---|
-| `<number>` or `p <n>` | Play station by list number |
+| `<number>` / `p <n>` | Play a station by list number |
 | `stop` | Stop playback |
-| `pause` | Pause / resume playback |
+| `pause` / `pp` | Pause or resume |
 | `n` / `next` | Next station |
 | `b` / `prev` | Previous station |
-| `r` / `rand` | Random station |
-| `now` | Current station + track + VLC state |
-| `info` | Full station details, codec, votes |
+| `r` / `rand` | Play a random station |
+| `now` | Show current station, metadata, and player state |
+| `info` | Show detailed station information |
 
 ### Browse
 
-| Command | Description |
+| Command | Action |
 |---|---|
 | `s <query>` | Search Radio Browser |
 | `cat <name\|#>` | Switch category by name or number |
-| `ls` | Redraw station list |
-| `sort <key>` | Sort by `name` `bitrate` `votes` `country` |
+| `ls` | Redraw the station list |
+| `sort <key>` | Sort by `name`, `bitrate`, `votes`, or `country` |
 
-**Categories:** `top` `hindi` `kannada` `pop` `rock` `jazz` `classical` `news` `favorites` `recent`
+### Audio and favorites
 
-### Audio
-
-| Command | Description |
+| Command | Action |
 |---|---|
 | `v <0-100>` | Set volume |
 | `m` | Toggle mute |
-| `f <n>` | Add station to favorites |
-| `eq` | Show 10-band EQ panel |
-| `eq <name>` | Apply preset — partial names work (`eq bass`) |
-| `eq custom <b0…b9>` | Set all 10 bands manually (−20…+20 dB) |
-| `sleep <minutes>` | Sleep timer (run again to restart) |
+| `f <n>` | Add/remove a station from favorites |
+| `eq` | Show equalizer panel |
+| `eq <preset>` | Apply an EQ preset; unique partial names work |
+| `eq custom <b0...b9>` | Set ten custom bands, clamped to ±20 dB |
+| `sleep <minutes>` | Start/restart the sleep timer |
 
-### Recording
+### Recording and system
 
-| Command | Description |
+| Command | Action |
 |---|---|
-| `record [name]` | Record current stream to MP3 |
-| `stoprec` | Stop recording, show saved path |
+| `record [name]` | Record the current stream to MP3 |
+| `stoprec` | Stop recording and show the saved path |
+| `vlcinfo` | Show the loaded libVLC version |
+| `datadir` | Show the application data directory |
+| `log [N]` | Print recent log lines |
+| `preload_status` | Show background category preload status |
+| `refresh` | Refresh station caches |
+| `clean` / `cls` | Clear and redraw the terminal |
+| `h` | Show full in-app help |
+| `q` | Quit and save session state |
 
-Recordings save to `%APPDATA%\PowerShellRadioPro\recordings\`.
+For the authoritative command behavior, see [`docs/COMMANDS.md`](docs/COMMANDS.md).
 
-### System
+## Equalizer
 
-| Command | Description |
-|---|---|
-| `vlcinfo` | Show libvlc version |
-| `datadir` | Show data directory |
-| `log [N]` | Print last N log lines (default 30) |
-| `preload_status` | Background preload progress |
-| `refresh` | Force-refresh all category caches |
-| `clean` / `cls` | Clear terminal and redraw |
-| `h` | Full help |
-| `q` | Quit and save session |
+The player exposes ten ISO-style centre frequencies:
 
-## EQ Presets
+`60Hz`, `170Hz`, `310Hz`, `600Hz`, `1kHz`, `3kHz`, `6kHz`, `12kHz`, `14kHz`, `16kHz`.
 
-`None` · `Bass Boost` · `Treble Boost` · `Rock` · `Pop` · `Jazz` · `Classical` · `Dance` · `Vocal Boost` · `Flat` · `Custom`
+Built-in presets include `None`, `Bass Boost`, `Treble Boost`, `Rock`, `Pop`, `Jazz`, `Classical`, `Dance`, `Vocal Boost`, `Flat`, and `Custom`.
 
-Partial names match uniquely — `eq bass` applies Bass Boost. See in-app `eq` panel for per-band gains.
+## Artwork
 
-## Configuration
+Artwork is downloaded from station favicon URLs, cached locally, and rendered without external image subprocesses. The renderer can use:
 
-Environment variables (all optional):
+- **Sextant** — Unicode 2×3 cells for high-density terminal artwork
+- **Sixel** — true bitmap output when the terminal supports Sixel
+- **Half-block** — compatibility fallback for older terminals
+- **Monogram** — deterministic fallback when no usable artwork exists
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `RADIO_PS_DATA_DIR` | `%APPDATA%\PowerShellRadioPro` | Data/cache directory override |
-| `RADIO_PS_ART` | `sextant` | Artwork mode: `sixel` renders true bitmaps (Windows Terminal 1.22+), `half` for legacy terminals |
-
-## Data Files
-
-All data lives in `%APPDATA%\PowerShellRadioPro\`:
-
-| File | Contents |
-|---|---|
-| `favorites.json` | Saved favorite stations |
-| `recent.json` | Recently played (up to 20) |
-| `session.json` | Last station + volume (restored on launch) |
-| `recordings\` | Stream recordings |
-| `cache\logos\` | Downloaded station logos |
-| `radio_log.txt` | Rotating log (2MB × 3 files) |
-
-## Development
+Set the renderer with:
 
 ```powershell
-pip install -e .[dev]
-pytest                    # unit + CLI tests (no VLC needed)
-python scripts/selfcheck.py   # headless full-feature self-check
+$env:RADIO_PS_ART = "sextant"
+$env:RADIO_PS_ART = "sixel"
+$env:RADIO_PS_ART = "half"
 ```
 
-Tests inject a fake `vlc` module via `tests/conftest.py`, so they run on machines without VLC. See [CONTRIBUTING.md](CONTRIBUTING.md).
+See [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) for terminal behavior and environment-variable details.
+
+## Data and persistence
+
+By default, application data is stored under:
+
+```text
+%APPDATA%\PowerShellRadioPro\
+```
+
+Important files/directories include:
+
+```text
+favorites.json              # favorite stations
+recent.json                 # up to 20 recent stations
+session.json                # volume + last station
+cache\stations.json         # persisted station/category cache
+cache\logos\               # downloaded artwork cache
+recordings\                # MP3 recordings
+radio_log.txt               # rotating application log
+```
+
+Set `RADIO_PS_DATA_DIR` to use another location. Writes use temporary files plus `os.replace()` where appropriate to reduce corruption risk.
 
 ## Architecture
 
+```text
+PowerShell / Windows Terminal
+          │
+          ▼
+   Start-Radio.ps1 / radio_ps.main
+          │
+          ▼
+      RadioCLI
+       │   │
+       │   ├── storage / logger / artwork
+       │   │
+       ▼   ▼
+ StationService ──────► Radio Browser API
+       │
+       ▼
+   RadioPlayer ───────► python-vlc ─────► libVLC ─────► Internet stream
+       │
+       ├── reconnect / health monitor
+       ├── metadata
+       ├── equalizer
+       └── recording
 ```
-.
-├── pyproject.toml          # Package config (src layout, deps)
-├── Start-Radio.ps1         # PowerShell launcher
-├── src/radio_ps/
-│   ├── main.py             # Entry point, arg parsing
-│   ├── core/               # player (libvlc), api, equalizer, config
-│   ├── services/           # station_service (cache, preload, liveness)
-│   ├── ui/                 # cli_ui (Rich REPL), art (sextant renderer)
-│   └── utils/              # logger, storage (atomic JSON), paths
-├── tests/                  # pytest suite (fake vlc)
-└── scripts/selfcheck.py    # Headless feature self-check
-```
 
-### Why python-vlc instead of cvlc + RC socket?
+The code follows a `src/radio_ps` package layout. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for component responsibilities, lifecycle, concurrency, and data flow.
 
-The original design drove a `cvlc` subprocess over a TCP RC interface:
-banner draining, socket I/O on every health check, port conflicts, string-parsed
-status output. v2.0 uses libvlc bindings directly:
+## Why libVLC?
 
-- Native event callbacks (`MediaPlayerPlaying`, `EncounteredError`, `EndReached`)
-- Typed `vlc.State` enum — no parsing
-- ICY metadata via `media.get_meta(vlc.Meta.NowPlaying)`
-- `vlc.AudioEqualizer` — 10-band EQ in the audio pipeline
-- `sout` recording parallel to playback, one shared VLC instance
+The current player uses `python-vlc` directly instead of controlling a `cvlc` subprocess over a remote-control socket. This gives the application typed VLC state, native media-player events, direct volume/EQ APIs, ICY metadata access, and recording through one VLC instance without port management or socket parsing.
 
-## Troubleshooting
+## Security considerations
 
-**`libvlc not found`**
-- Install VLC 64-bit from [videolan.org](https://www.videolan.org/vlc/)
-- Confirm Python bitness matches: `python -c "import struct; print(struct.calcsize('P')*8)"`
-- Or add VLC to PATH: `$env:PATH += ";C:\Program Files\VideoLAN\VLC"`
+The Radio Browser client sanitizes station URLs before they reach the player and only accepts schemes configured in `ALLOWED_STREAM_SCHEMES`. Network requests use TLS verification, bounded timeouts, retries for selected HTTP failures, and explicit user-agent strings. Artwork downloads are size-limited and require an image content type.
 
-**`python-vlc is not installed`**
+This is an internet-streaming desktop application, not a sandbox. Treat third-party station URLs and downloaded media as untrusted input and keep VLC and Python dependencies updated.
+
+See [`SECURITY.md`](SECURITY.md) for vulnerability reporting guidance.
+
+## Development and testing
+
+Install development dependencies:
 
 ```powershell
-pip install python-vlc
+python -m pip install -e .[dev]
 ```
 
-**Garbled characters / boxes instead of art**
-- Use Windows Terminal, not legacy conhost
-- Launcher sets UTF-8 automatically; manually: `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`
-- Legacy terminal without sextant glyphs: `$env:RADIO_PS_ART = 'half'`
-
-**`Set-ExecutionPolicy` error**
+Run the same checks used by CI:
 
 ```powershell
-Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+ruff check src tests scripts
+pytest
+python -c "from radio_ps.main import main; print('OK')"
 ```
+
+For a broader headless feature sweep:
+
+```powershell
+python scripts/selfcheck.py
+```
+
+The test suite installs a fake `vlc` module before importing the player, allowing unit and CLI tests to run without a local VLC installation. Network calls are stubbed in the CLI fixture.
+
+CI runs on `windows-latest` with Python 3.11 and performs linting, pytest, and an import smoke test.
+
+## Documentation
+
+| Document | Purpose |
+|---|---|
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Components, data flow, concurrency, and lifecycle |
+| [`docs/COMMANDS.md`](docs/COMMANDS.md) | Detailed CLI command reference |
+| [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) | Environment variables, paths, and runtime settings |
+| [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | Development workflow, tests, linting, and CI |
+| [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | Common installation/runtime problems |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contribution workflow and coding standards |
+| [`SECURITY.md`](SECURITY.md) | Security model and vulnerability reporting |
+| [`SUPPORT.md`](SUPPORT.md) | Getting help and reporting problems |
+| [`CHANGELOG.md`](CHANGELOG.md) | User-visible project history |
 
 ## License
 
-[MIT](LICENSE)
+Released under the [MIT License](LICENSE).

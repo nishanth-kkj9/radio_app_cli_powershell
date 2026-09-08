@@ -17,12 +17,14 @@ env/
 .coverage.*
 htmlcov/
 
-# ── Runtime data (lives in %APPDATA% by default; catch strays) ─────────
+# ── Runtime data (normally under %APPDATA%; catch repo-local strays) ───
 favorites.json
 recent.json
 session.json
 stats.json
 radio_log.txt
+recordings/
+cache/
 
 # ── Dev artifacts ───────────────────────────────────────────────────────
 _shots/

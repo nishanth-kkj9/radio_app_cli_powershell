@@ -1,30 +1,44 @@
 ---
 name: Bug report
-about: Create a report to help us improve
+about: Report a reproducible problem with PowerShell Radio Pro
 title: "[Bug] "
 labels: bug
 assignees: ''
-
 ---
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+## Problem
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Run '...'
-2. Click on '....'
-3. See error
+Describe what went wrong and what you expected instead.
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+## Reproduction
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
+1. Run `...`
+2. Enter `...`
+3. Observe `...`
 
-**Desktop:**
-- OS: [e.g., Windows 10]
-- Python version: [e.g., 3.11]
+## Environment
 
-**Additional context**
-Add any other context about the problem here.
+- Windows version:
+- PowerShell version:
+- Python version:
+- VLC version / architecture:
+- Terminal:
+- PowerShell Radio Pro version:
+
+## Diagnostics
+
+If relevant, run `python -m radio_ps --check` and include the relevant output. You can also use `log 100`.
+
+```text
+Paste sanitized output here.
+```
+
+## Screenshots / terminal output
+
+Add screenshots or terminal output when the problem is visual.
+
+## Additional context
+
+Include the station/category involved, whether the issue affects one or many stations, and anything else that may help reproduce it.
+
+> Do not include passwords, tokens, private URLs, or other sensitive information.
