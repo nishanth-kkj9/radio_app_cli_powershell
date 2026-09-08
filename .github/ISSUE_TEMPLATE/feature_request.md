@@ -1,20 +1,30 @@
 ---
 name: Feature request
-about: Suggest a new feature for PowerShell Radio Pro
+about: Suggest a focused improvement for PowerShell Radio Pro
 title: "[Feature] "
 labels: enhancement
 assignees: ''
-
 ---
 
-**Is your feature request related to a problem?**
-A clear and concise description of what the problem is.
+## Problem or use case
 
-**Describe the feature you'd like**
-A clear and concise description of what you want to happen.
+What user problem would this change solve?
 
-**Describe alternatives you've considered**
-A clear and concise description of any alternative solutions or features you've considered.
+## Proposed behavior
 
-**Additional context**
-Add any other context about the feature request here.
+Describe the feature from the user's perspective. Include example commands or terminal behavior when useful.
+
+## Alternatives considered
+
+Describe other approaches or workarounds you considered.
+
+## Scope and compatibility
+
+- Does this affect Windows Terminal, legacy consoles, or both?
+- Does it require VLC-specific behavior?
+- Does it change persisted data or configuration?
+- Would it add a new dependency?
+
+## Additional context
+
+Add mockups, examples, prior art, or other useful information.
